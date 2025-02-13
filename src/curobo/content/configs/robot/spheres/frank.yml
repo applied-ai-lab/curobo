@@ -164,3 +164,77 @@ collision_spheres:
       "radius": 0.02555
     - "center": [0.022, -0.061, -0.053]
       "radius": 0.02555
+  left_kinova_arm_robotiq_arg2f_base_link:
+    - "center": [0.0, -0.0, 0.042]
+      "radius": 0.045
+  right_kinova_arm_robotiq_arg2f_base_link:
+    - "center": [0.0, 0.0, 0.042]
+      "radius": 0.045
+  left_kinova_arm_left_outer_knuckle:
+    - "center": [0.0, 0.013, -0.0]
+      "radius": 0.02
+  left_kinova_arm_right_outer_knuckle:
+    - "center": [0.0, 0.013, 0.0]
+      "radius": 0.02
+  left_kinova_arm_left_inner_knuckle:
+    - "center": [0.0, 0.025, 0.027]
+      "radius": 0.02
+  left_kinova_arm_right_inner_knuckle:
+    - "center": [0.0, 0.025, 0.027]
+      "radius": 0.02
+  left_kinova_arm_right_outer_finger:
+    - "center": [0.0, 0.0, 0.011]
+      "radius": 0.02
+    - "center": [0.0, 0.0, 0.039]
+      "radius": 0.02
+  left_kinova_arm_left_outer_finger:
+    - "center": [0.0, 0.0, 0.011]
+      "radius": 0.02
+    - "center": [-0.0, 0.0, 0.039]
+      "radius": 0.02
+  left_kinova_arm_left_inner_finger:
+    - "center": [0.0, -0.018, 0.03]
+      "radius": 0.015
+    - "center": [0.0, -0.014, 0.008]
+      "radius": 0.015
+  left_kinova_arm_right_inner_finger:
+    - "center": [0.0, -0.018, 0.03]
+      "radius": 0.015
+    - "center": [0.0, -0.008, 0.006]
+      "radius": 0.015
+  right_kinova_arm_left_outer_knuckle:
+    - "center": [-0.0, 0.025, -0.0]
+      "radius": 0.015
+  right_kinova_arm_right_outer_knuckle:
+    - "center": [-0.0, 0.021, 0.0]
+      "radius": 0.015
+  right_kinova_arm_right_outer_finger:
+    - "center": [0.0, -0.0, 0.002]
+      "radius": 0.015
+    - "center": [-0.0, 0.002, 0.017]
+      "radius": 0.015
+    - "center": [-0.0, 0.005, 0.036]
+      "radius": 0.015
+  right_kinova_arm_left_outer_finger:
+    - "center": [-0.0, -0.0, 0.0]
+      "radius": 0.015
+    - "center": [-0.0, 0.004, 0.017]
+      "radius": 0.015
+    - "center": [-0.0, 0.004, 0.033]
+      "radius": 0.015
+  right_kinova_arm_left_inner_knuckle:
+    - "center": [-0.0, 0.028, 0.026]
+      "radius": 0.02
+  right_kinova_arm_right_inner_knuckle:
+    - "center": [-0.0, 0.028, 0.026]
+      "radius": 0.02
+  right_kinova_arm_left_inner_finger:
+    - "center": [0.0, -0.005, 0.0]
+      "radius": 0.015
+    - "center": [0.0, -0.02, 0.028]
+      "radius": 0.015
+  right_kinova_arm_right_inner_finger:
+    - "center": [0.0, 0.0, 0.0]
+      "radius": 0.015
+    - "center": [0.0, -0.02, 0.028]
+      "radius": 0.015
