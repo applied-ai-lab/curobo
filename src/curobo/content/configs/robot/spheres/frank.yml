@@ -1,0 +1,166 @@
+robot: 'Frank'
+urdf_path: "urdf/frank/frank.urdf"
+
+collision_spheres:
+  chassis_link:
+    - "center": [0.056, -0.279, 0.172]
+      "radius": 0.15737
+    - "center": [-0.244, -0.272, 0.172]
+      "radius": 0.15677
+    - "center": [0.056, 0.279, 0.172]
+      "radius": 0.15557
+    - "center": [0.051, 0.019, 0.172]
+      "radius": 0.15557
+    - "center": [0.331, 0.0, 0.172]
+      "radius": 0.15557
+    - "center": [-0.244, 0.272, 0.172]
+      "radius": 0.15557
+    - "center": [-0.267, 0.0, 0.172]
+      "radius": 0.15557
+    - "center": [0.299, 0.285, 0.172]
+      "radius": 0.15377
+    - "center": [-0.173, -0.117, 0.172]
+      "radius": 0.15196
+    - "center": [0.299, -0.285, 0.172]
+      "radius": 0.15557
+  ewellix_lift_base_link:
+    - "center": [0.0, 0.0, 0.013]
+      "radius": 0.1
+    - "center": [0.0, 0.0, 0.114]
+      "radius": 0.1
+    - "center": [0.0, 0.0, 0.209]
+      "radius": 0.1
+    - "center": [0.0, 0.0, 0.311]
+      "radius": 0.1
+  ewellix_lift_top_link:
+    - "center": [0.0, 0.0, -0.082]
+      "radius": 0.1
+    - "center": [0.0, 0.0, -0.21]
+      "radius": 0.1
+    - "center": [0.0, 0.0, -0.332]
+      "radius": 0.1
+    - "center": [0.0, 0.0, -0.462]
+      "radius": 0.1
+  dual_gen3_base_link:
+    - "center": [0.0, 0.0, 0.023]
+      "radius": 0.08289
+    - "center": [0.0, -0.0, 0.191]
+      "radius": 0.08289
+    - "center": [0.0, 0.0, 0.098]
+      "radius": 0.08289
+  left_kinova_arm_base_link:
+    - "center": [0.0, -0.0, 0.077]
+      "radius": 0.0651
+    - "center": [-0.0, -0.0, 0.132]
+      "radius": 0.0651
+  right_kinova_arm_base_link:
+    - "center": [0.0, -0.0, 0.077]
+      "radius": 0.0651
+    - "center": [-0.0, -0.0, 0.135]
+      "radius": 0.0651
+  left_kinova_arm_shoulder_link:
+    - "center": [0.0, 0.001, -0.038]
+      "radius": 0.05445
+    - "center": [0.0, -0.008, -0.127]
+      "radius": 0.05445
+    - "center": [-0.0, -0.024, -0.079]
+      "radius": 0.05445
+  right_kinova_arm_shoulder_link:
+    - "center": [-0.0, -0.0, -0.031]
+      "radius": 0.05445
+    - "center": [0.0, -0.008, -0.126]
+      "radius": 0.05445
+    - "center": [-0.0, -0.024, -0.078]
+      "radius": 0.05445
+  left_kinova_arm_half_arm_1_link:
+    - "center": [0.0, -0.053, -0.025]
+      "radius": 0.05445
+    - "center": [0.0, -0.126, -0.025]
+      "radius": 0.05445
+    - "center": [-0.0, 0.004, -0.017]
+      "radius": 0.05445
+    - "center": [-0.0, -0.189, -0.008]
+      "radius": 0.05445
+  right_kinova_arm_half_arm_1_link:
+    - "center": [0.0, -0.005, -0.017]
+      "radius": 0.05445
+    - "center": [0.0, -0.192, -0.005]
+      "radius": 0.05445
+    - "center": [0.0, -0.073, -0.025]
+      "radius": 0.05445
+    - "center": [0.0, -0.132, -0.025]
+      "radius": 0.05445
+  left_kinova_arm_half_arm_2_link:
+    - "center": [0.0, -0.03, -0.133]
+      "radius": 0.05489
+    - "center": [-0.0, -0.011, -0.206]
+      "radius": 0.05489
+    - "center": [-0.0, -0.01, -0.062]
+      "radius": 0.05489
+    - "center": [0.0, -0.006, -0.017]
+      "radius": 0.05489
+  right_kinova_arm_half_arm_2_link:
+    - "center": [0.0, 0.003, -0.028]
+      "radius": 0.05489
+    - "center": [0.0, -0.021, -0.069]
+      "radius": 0.05489
+    - "center": [-0.0, -0.029, -0.147]
+      "radius": 0.05489
+    - "center": [-0.0, -0.01, -0.208]
+      "radius": 0.05489
+  right_kinova_arm_forearm_link:
+    - "center": [0.0, -0.122, -0.023]
+      "radius": 0.05086
+    - "center": [0.0, -0.05, -0.027]
+      "radius": 0.04972
+    - "center": [0.0, -0.0, -0.026]
+      "radius": 0.04972
+    - "center": [0.0, -0.19, 0.001]
+      "radius": 0.05086
+  left_kinova_arm_forearm_link:
+    - "center": [0.0, -0.116, -0.021]
+      "radius": 0.05086
+    - "center": [-0.0, -0.049, -0.025]
+      "radius": 0.04972
+    - "center": [-0.0, -0.0, -0.026]
+      "radius": 0.04972
+    - "center": [-0.0, -0.183, -0.006]
+      "radius": 0.05086
+  left_kinova_arm_spherical_wrist_1_link:
+    - "center": [0.0, -0.011, -0.033]
+      "radius": 0.05047
+    - "center": [0.011, -0.018, -0.098]
+      "radius": 0.05047
+  right_kinova_arm_spherical_wrist_1_link:
+    - "center": [-0.0, -0.002, -0.043]
+      "radius": 0.05047
+    - "center": [0.0, -0.012, -0.098]
+      "radius": 0.05047
+  right_kinova_arm_spherical_wrist_2_link:
+    - "center": [0.0, 0.001, -0.019]
+      "radius": 0.04571
+    - "center": [0.0, -0.092, 0.003]
+      "radius": 0.04571
+    - "center": [0.0, -0.043, -0.024]
+      "radius": 0.04571
+  left_kinova_arm_spherical_wrist_2_link:
+    - "center": [-0.0, -0.002, -0.019]
+      "radius": 0.04571
+    - "center": [-0.0, -0.048, -0.018]
+      "radius": 0.04571
+    - "center": [-0.0, -0.098, 0.003]
+      "radius": 0.04571
+  left_kinova_arm_bracelet_link:
+    - "center": [-0.0, -0.006, -0.031]
+      "radius": 0.05555
+    - "center": [-0.022, -0.062, -0.05]
+      "radius": 0.02555
+    - "center": [0.022, -0.062, -0.054]
+      "radius": 0.02555
+  right_kinova_arm_bracelet_link:
+    - "center": [-0.0, -0.003, -0.032]
+      "radius": 0.05555
+    - "center": [-0.022, -0.061, -0.053]
+      "radius": 0.02555
+    - "center": [0.022, -0.061, -0.053]
+      "radius": 0.02555
