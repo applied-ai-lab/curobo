@@ -1,0 +1,184 @@
+robot_cfg:
+  kinematics:
+    base_link: base_link
+    link_names: ['left_kinova_arm_tool_frame', 'right_kinova_arm_tool_frame']
+    collision_link_names:
+    - chassis_link
+    - ewellix_lift_base_link
+    - ewellix_lift_top_link
+    - dual_gen3_base_link
+    - right_kinova_arm_base_link
+    - left_kinova_arm_base_link
+    - right_kinova_arm_shoulder_link
+    - left_kinova_arm_shoulder_link
+    - right_kinova_arm_half_arm_1_link
+    - left_kinova_arm_half_arm_1_link
+    - right_kinova_arm_half_arm_2_link
+    - left_kinova_arm_half_arm_2_link
+    - right_kinova_arm_forearm_link
+    - left_kinova_arm_forearm_link
+    - right_kinova_arm_spherical_wrist_1_link
+    - left_kinova_arm_spherical_wrist_1_link
+    - right_kinova_arm_spherical_wrist_2_link
+    - left_kinova_arm_spherical_wrist_2_link
+    - right_kinova_arm_bracelet_link
+    - left_kinova_arm_bracelet_link
+    # - right_kinova_arm_robotiq_arg2f_base_link
+    # - left_kinova_arm_robotiq_arg2f_base_link
+    # - left_kinova_arm_left_outer_finger
+    # - left_kinova_arm_right_outer_finger
+    # - right_kinova_arm_left_outer_finger
+    # - right_kinova_arm_right_outer_finger
+    # - left_kinova_arm_left_inner_finger
+    # - left_kinova_arm_right_inner_finger
+    # - left_kinova_arm_left_inner_finger_pad
+    # - left_kinova_arm_right_inner_finger_pad
+    # - right_kinova_arm_left_inner_finger
+    # - right_kinova_arm_right_inner_finger
+    # - right_kinova_arm_left_inner_finger_pad
+    # - right_kinova_arm_right_inner_finger_pad
+    # - left_kinova_arm_right_fingertip
+    # - left_kinova_arm_left_fingertip
+    # - right_kinova_arm_right_fingertip
+    # - right_kinova_arm_left_fingertip
+    collision_sphere_buffer: 0.0
+    collision_spheres: "spheres/frank.yml"
+    ee_link: left_kinova_arm_tool_frame
+    self_collision_ignore: {
+      chassis_link: [ewellix_lift_top_link, dual_gen3_base_link, ewellix_lift_base_link], 
+      ewellix_lift_base_link: [ewellix_lift_top_link, dual_gen3_base_link, right_kinova_arm_base_link, left_kinova_arm_base_link],
+      ewellix_lift_top_link: [right_kinova_arm_base_link, left_kinova_arm_base_link, dual_gen3_base_link],
+      dual_gen3_base_link: [right_kinova_arm_base_link, left_kinova_arm_base_link],
+      right_kinova_arm_base_link: [right_kinova_arm_shoulder_link],
+      left_kinova_arm_base_link: [left_kinova_arm_shoulder_link],
+      right_kinova_arm_shoulder_link: [right_kinova_arm_half_arm_1_link],
+      left_kinova_arm_shoulder_link: [left_kinova_arm_half_arm_1_link],
+      right_kinova_arm_half_arm_1_link: [right_kinova_arm_half_arm_2_link],
+      left_kinova_arm_half_arm_1_link: [left_kinova_arm_half_arm_2_link],
+      right_kinova_arm_half_arm_2_link: [right_kinova_arm_forearm_link],
+      left_kinova_arm_half_arm_2_link: [left_kinova_arm_forearm_link],
+      right_kinova_arm_forearm_link: [right_kinova_arm_spherical_wrist_1_link],
+      left_kinova_arm_forearm_link: [left_kinova_arm_spherical_wrist_1_link],
+      right_kinova_arm_spherical_wrist_1_link: [right_kinova_arm_spherical_wrist_2_link],
+      left_kinova_arm_spherical_wrist_1_link: [left_kinova_arm_spherical_wrist_2_link],
+      right_kinova_arm_spherical_wrist_2_link: [right_kinova_arm_bracelet_link],
+      left_kinova_arm_spherical_wrist_2_link: [left_kinova_arm_bracelet_link],
+      # right_bracelet_link: [right_arm_robotiq_arg2f_base_link],
+      # left_bracelet_link: [left_arm_robotiq_arg2f_base_link],
+      # right_arm_robotiq_arg2f_base_link: [right_arm_left_outer_finger, right_arm_right_outer_finger, right_arm_left_inner_finger, right_arm_right_inner_finger, right_arm_left_finger_mount, right_arm_right_fingertip, right_arm_right_finger_mount, right_arm_left_fingertip],
+      # left_arm_robotiq_arg2f_base_link: [left_arm_left_outer_finger, left_arm_right_outer_finger, left_arm_left_inner_finger, left_arm_right_inner_finger],
+      # left_arm_left_outer_finger: [left_arm_robotiq_arg2f_base_link, left_arm_right_outer_finger, left_arm_right_inner_finger, left_arm_left_finger_mount, left_arm_right_finger_mount],
+      # left_arm_right_outer_finger: [left_arm_robotiq_arg2f_base_link, left_arm_right_finger_mount, left_arm_left_finger_mount],
+      # right_arm_left_outer_finger: [right_arm_robotiq_arg2f_base_link, right_arm_right_outer_finger, right_arm_right_inner_finger, right_arm_left_finger_mount, left_arm_right_finger_mount],
+      # right_arm_right_outer_finger: [right_arm_robotiq_arg2f_base_link, right_arm_right_finger_mount, right_arm_left_finger_mount],
+      # left_arm_left_inner_finger: [left_arm_robotiq_arg2f_base_link, left_arm_left_outer_finger, left_arm_left_inner_knuckle],
+      # left_arm_right_inner_finger: [left_arm_robotiq_arg2f_base_link, left_arm_right_outer_finger, left_arm_right_inner_knuckle],
+      # right_arm_left_inner_finger: [right_arm_robotiq_arg2f_base_link, right_arm_left_outer_finger, right_arm_left_inner_knuckle, right_arm_right_outer_finger, right_arm_right_inner_knuckle, right_arm_right_inner_finger],
+      # right_arm_right_inner_finger: [right_arm_robotiq_arg2f_base_link, right_arm_right_outer_finger, right_arm_right_inner_knuckle, right_arm_left_outer_finger, right_arm_left_inner_knuckle],
+      # left_arm_right_finger_mount: [left_arm_right_outer_finger, left_arm_right_inner_finger, left_arm_right_fingertip,
+      # left_arm_right_inner_knuckle, left_arm_right_outer_knuckle],
+      # left_arm_left_finger_mount: [left_arm_left_outer_finger, left_arm_left_inner_finger, left_arm_left_fingertip,
+      # left_arm_left_inner_knuckle, left_arm_left_outer_knuckle, left_arm_right_fingertip],
+      # right_arm_right_finger_mount: [right_arm_right_outer_finger, right_arm_right_inner_finger, right_arm_right_fingertip, right_arm_left_outer_finger, right_arm_left_inner_finger, right_arm_left_inner_knuckle, right_arm_left_outer_knuckle,
+      # right_arm_right_inner_knuckle, right_arm_right_outer_knuckle, right_arm_left_finger_mount, right_arm_left_fingertip],
+      # right_arm_left_finger_mount: [right_arm_left_outer_finger, right_arm_left_inner_finger, right_arm_left_fingertip, right_arm_right_outer_finger, right_arm_right_inner_finger, right_arm_right_inner_knuckle, right_arm_right_outer_knuckle,
+      # right_arm_left_inner_knuckle, right_arm_left_outer_knuckle, right_arm_right_fingertip],
+      # left_arm_left_fingertip: [left_arm_left_finger_mount, left_arm_left_inner_finger, left_arm_left_outer_finger,
+      # left_arm_left_inner_knuckle, left_arm_left_outer_knuckle, left_arm_right_fingertip],
+      # left_arm_right_fingertip: [left_arm_right_finger_mount, left_arm_right_inner_finger, left_arm_right_outer_finger,
+      # left_arm_right_inner_knuckle, left_arm_right_outer_knuckle],
+      # right_arm_left_fingertip: [right_arm_left_finger_mount, right_arm_left_inner_finger, right_arm_left_outer_finger, right_arm_right_finger_mount, right_arm_right_inner_finger, right_arm_right_outer_finger, right_arm_right_inner_knuckle, right_arm_right_outer_knuckle,
+      # right_arm_left_inner_knuckle, right_arm_left_outer_knuckle, right_arm_right_fingertip],
+      # right_arm_right_fingertip: [right_arm_right_finger_mount, right_arm_right_inner_finger, right_arm_right_outer_finger, right_arm_left_finger_mount, right_arm_left_inner_finger, right_arm_left_outer_finger, right_arm_left_inner_knuckle, right_arm_left_outer_knuckle,
+      # right_arm_right_inner_knuckle, right_arm_right_outer_knuckle],
+    }
+    self_collision_buffer:
+      {
+        chassis_link: 0.0,
+        ewellix_lift_base_link: 0.0,
+        ewellix_lift_top_link: 0.0,
+        dual_gen3_base_link: 0.0,
+        right_kinova_arm_base_link: 0.0,
+        left_kinova_arm_base_link: 0.0,
+        right_kinova_arm_shoulder_link: 0.0,
+        left_kinova_arm_shoulder_link: 0.0,
+        right_kinova_arm_half_arm_1_link: 0.0,
+        left_kinova_arm_half_arm_1_link: 0.0,
+        right_kinova_arm_half_arm_2_link: 0.0,
+        left_kinova_arm_half_arm_2_link: 0.0,
+        right_kinova_arm_forearm_link: 0.0,
+        left_kinova_arm_forearm_link: 0.0,
+        right_kinova_arm_spherical_wrist_1_link: 0.0,
+        left_kinova_arm_spherical_wrist_1_link: 0.0,
+        right_kinova_arm_spherical_wrist_2_link: 0.0,
+        left_kinova_arm_spherical_wrist_2_link: 0.0,
+        right_kinova_arm_bracelet_link: 0.0,
+        left_kinova_arm_bracelet_link: 0.0,
+      }
+    urdf_path: robot/frank/frank.urdf
+    isaac_usd_path: robots/frank/frank.usd
+    usd_robot_root: /frank
+    use_usd_kinematics: False
+    asset_root_path: "robot"
+
+    lock_joints: {"ewellix_lift_top_joint": 0.063}
+    cspace:
+      joint_names:
+      - ewellix_lift_top_joint
+      - left_kinova_arm_joint_1
+      - left_kinova_arm_joint_2
+      - left_kinova_arm_joint_3
+      - left_kinova_arm_joint_4
+      - left_kinova_arm_joint_5
+      - left_kinova_arm_joint_6
+      - left_kinova_arm_joint_7
+      - right_kinova_arm_joint_1
+      - right_kinova_arm_joint_2
+      - right_kinova_arm_joint_3
+      - right_kinova_arm_joint_4
+      - right_kinova_arm_joint_5
+      - right_kinova_arm_joint_6
+      - right_kinova_arm_joint_7
+
+  
+      cspace_distance_weight:
+      - 1.0 
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+
+
+    
+      null_space_weight:
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+
+      retract_config: [
+0.063, -2.23, 0.392, -1.43, -2.32, 0.352, -0.258, -1.02, -0.87, -0.48, -1.66, -2.32, -0.110, -0.249, -2.28
+      ]
+      max_acceleration: 25.0
+      max_jerk: 500.0
