@@ -21,8 +21,9 @@ import torch.autograd.profiler as profiler
 from curobo.opt.newton.newton_base import NewtonOptBase
 from curobo.opt.opt_base import Optimizer
 from curobo.opt.particle.particle_opt_base import ParticleOptBase
-from curobo.rollout.rollout_base import Goal, RolloutBase, RolloutMetrics
+from curobo.rollout.rollout_base import Goal, RolloutBase, RolloutMetrics, Observation
 from curobo.types.robot import State
+from curobo.types.math import Pose
 from curobo.util.logger import log_info, log_warn
 
 
@@ -94,6 +95,21 @@ class WrapBase(WrapConfig):
             self.n_problems = n_problems
             for opt in self.optimizers:
                 opt.update_nproblems(self.n_problems)
+
+    def update_object_pose(self, pose: Pose):
+        self.safety_rollout.update_object_pose(pose)
+        for opt in self.optimizers:
+            opt.update_object_pose(pose)
+
+    def update_observation(self, observation: Observation):
+        self.safety_rollout.update_observation(observation)
+        for opt in self.optimizers:
+            opt.update_observation(observation)
+
+    def set_value_fn(self, value_fn):
+        self.safety_rollout.value_cost.set_value_fn(value_fn)
+        for opt in self.optimizers:
+            opt.set_value_fn(value_fn)
 
     def update_params(self, goal: Goal):
         with profiler.record_function("wrap_base/safety/update_params"):

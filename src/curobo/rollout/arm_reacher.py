@@ -21,6 +21,7 @@ from curobo.geom.sdf.world import WorldCollision
 from curobo.rollout.cost.cost_base import CostConfig
 from curobo.rollout.cost.dist_cost import DistCost, DistCostConfig
 from curobo.rollout.cost.pose_cost import PoseCost, PoseCostConfig, PoseCostMetric
+from curobo.rollout.cost.value_cost import ValueCost, ValueCostConfig
 from curobo.rollout.cost.straight_line_cost import StraightLineCost
 from curobo.rollout.cost.zero_cost import ZeroCost
 from curobo.rollout.dynamics_model.kinematic_model import KinematicModelState
@@ -28,6 +29,7 @@ from curobo.rollout.rollout_base import Goal, RolloutMetrics
 from curobo.types.base import TensorDeviceType
 from curobo.types.robot import RobotConfig
 from curobo.types.tensor import T_BValue_float, T_BValue_int
+from curobo.types.math import Pose
 from curobo.util.helpers import list_idx_if_not_none
 from curobo.util.logger import log_error, log_info, log_warn
 from curobo.util.tensor_util import cat_max
@@ -90,6 +92,7 @@ class ArmReacherCostConfig(ArmCostConfig):
     zero_vel_cfg: Optional[CostConfig] = None
     zero_jerk_cfg: Optional[CostConfig] = None
     link_pose_cfg: Optional[PoseCostConfig] = None
+    value_cfg: Optional[ValueCostConfig] = None
 
     @staticmethod
     def _get_base_keys():
@@ -103,6 +106,7 @@ class ArmReacherCostConfig(ArmCostConfig):
             "zero_vel_cfg": CostConfig,
             "zero_jerk_cfg": CostConfig,
             "link_pose_cfg": PoseCostConfig,
+            "value_cfg": ValueCostConfig,
         }
         new_k.update(base_k)
         return new_k
@@ -210,6 +214,9 @@ class ArmReacher(ArmBase, ArmReacherConfig):
             if self.zero_jerk_cost.hinge_value is not None:
                 self._compute_g_dist = True
 
+        if self.cost_cfg.value_cfg is not None:
+            self.value_cost = ValueCost(self.cost_cfg.value_cfg)
+
         self.z_tensor = torch.tensor(
             0, device=self.tensor_args.device, dtype=self.tensor_args.dtype
         )
@@ -234,7 +241,24 @@ class ArmReacher(ArmBase, ArmReacherConfig):
         # check if g_dist is required in any of the cost terms:
         self.update_params(Goal(current_state=self._start_state))
 
-    def cost_fn(self, state: KinematicModelState, action_batch=None):
+    def value_cost_fn(self, state: KinematicModelState, action_batch=None, return_dict=False):
+        state_batch = state.state_seq
+        ee_pos_batch, ee_quat_batch = state.ee_pos_seq, state.ee_quat_seq
+        if self.cost_cfg.value_cfg is not None and self.value_cost.enabled:
+            value = self.value_cost.forward(
+                state_batch,
+                ee_pos_batch,
+                ee_quat_batch,
+                self._observation_buffer,
+                # self.object_pose,
+                self._goal_buffer
+            )
+        else:
+            return None
+
+        return value
+
+    def cost_fn(self, state: KinematicModelState, action_batch=None, return_dict=False):
         """
         Compute cost given that state dictionary and actions
 
@@ -243,9 +267,13 @@ class ArmReacher(ArmBase, ArmReacherConfig):
         :class:`curobo.rollout.cost.DistCost`
 
         """
+        cost_dict = {}
         state_batch = state.state_seq
         with profiler.record_function("cost/base"):
-            cost_list = super(ArmReacher, self).cost_fn(state, action_batch, return_list=True)
+            if return_dict:
+                cost_list, cost_dict = super(ArmReacher, self).cost_fn(state, action_batch, return_list=True, return_dict=return_dict)
+            else:
+                cost_list = super(ArmReacher, self).cost_fn(state, action_batch, return_list=True)
         ee_pos_batch, ee_quat_batch = state.ee_pos_seq, state.ee_quat_seq
         g_dist = None
         with profiler.record_function("cost/pose"):
@@ -267,6 +295,7 @@ class ArmReacher(ArmBase, ArmReacherConfig):
                         ee_pos_batch, ee_quat_batch, self._goal_buffer
                     )
                 cost_list.append(goal_cost)
+                cost_dict['goal'] = goal_cost
         with profiler.record_function("cost/link_poses"):
             if self._goal_buffer.links_goal_pose is not None and self.cost_cfg.pose_cfg is not None:
                 link_poses = state.link_pose
@@ -295,6 +324,7 @@ class ArmReacher(ArmBase, ArmReacherConfig):
                 self._goal_buffer.batch_goal_state_idx,
             )
             cost_list.append(joint_cost)
+            cost_dict['cspace'] = joint_cost
         if self.cost_cfg.straight_line_cfg is not None and self.straight_line_cost.enabled:
             st_cost = self.straight_line_cost.forward(ee_pos_batch)
             cost_list.append(st_cost)
@@ -328,6 +358,9 @@ class ArmReacher(ArmBase, ArmReacherConfig):
                 cost = cat_sum_horizon_reacher(cost_list)
             else:
                 cost = cat_sum_reacher(cost_list)
+
+        if return_dict:
+            return cost, cost_dict
 
         return cost
 

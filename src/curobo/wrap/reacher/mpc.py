@@ -53,7 +53,7 @@ from curobo.opt.particle.parallel_mppi import ParallelMPPI, ParallelMPPIConfig
 from curobo.rollout.arm_reacher import ArmReacher, ArmReacherConfig
 from curobo.rollout.cost.pose_cost import PoseCostMetric
 from curobo.rollout.dynamics_model.kinematic_model import KinematicModelState
-from curobo.rollout.rollout_base import Goal
+from curobo.rollout.rollout_base import Goal, Observation
 from curobo.types.base import TensorDeviceType
 from curobo.types.math import Pose
 from curobo.types.robot import JointState, RobotConfig
@@ -540,6 +540,23 @@ class MpcSolver(MpcSolverConfig):
             log_warn("MPC didn't converge")
 
         return result
+
+    def update_object_pose(self, pose: Pose):
+        """Update the object pose for Value-guided MPC (used for state-based approach)
+        Args:
+            pose: Pose object containing object position and orientation.
+        """
+
+        self.solver.update_object_pose(pose)
+        self.rollout_fn.update_object_pose(pose)
+
+    def update_observation(self, observation: Observation):
+        self.solver.update_observation(observation)
+        self.rollout_fn.update_observation(observation)
+
+    def set_value_fn(self, value_fn):
+        self.rollout_fn.value_cost.set_value_fn(value_fn)
+        self.solver.set_value_fn(value_fn)
 
     def update_goal(self, goal: Goal):
         """Update the goal for MPC.

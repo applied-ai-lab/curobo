@@ -67,6 +67,8 @@ class ParallelMPPIConfig(ParticleOptConfig):
     gamma: float
     kappa: float
     sample_per_problem: bool
+    value_lambda: float = 60.
+    value_coef: float = 200.
 
     def __post_init__(self):
         self.init_cov = self.tensor_args.to_device(self.init_cov).unsqueeze(0)
@@ -172,7 +174,7 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
         self.reset_mean()
         self.reset_covariance()
 
-    def _compute_total_cost(self, costs):
+    def _compute_total_cost(self, costs, value_costs=None):
         """
         Calculate weights using exponential utility
         """
@@ -181,6 +183,11 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
         # cost_seq = torch.sum(cost_seq, dim=-1, keepdim=False) / self.gamma_seq[..., 0]
         # print(self.gamma_seq.shape, costs.shape)
         cost_seq = jit_compute_total_cost(self.gamma_seq, costs)
+        if value_costs is not None:
+            #TODO: define a variable for lambda_ (currently, set 20 as the default)
+            value_cost_seq = jit_compute_value_cost(self.gamma_seq, value_costs, self.value_lambda, self.value_coef)
+            value_cost_seq = value_cost_seq.unsqueeze(0)
+            cost_seq = cost_seq + value_cost_seq
         return cost_seq
 
     def _exp_util(self, total_costs):
@@ -188,8 +195,11 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
         # w = torch.softmax((-1.0 / self.beta) * total_costs, dim=-1)
         return w
 
-    def _exp_util_from_costs(self, costs):
-        w = jit_calculate_exp_util_from_costs(costs, self.gamma_seq, self.beta)
+    def _exp_util_from_costs(self, costs, value_costs=None):
+        if value_costs is not None:
+            w = jit_calculate_exp_util_from_value_costs(costs, value_costs, self.gamma_seq, self.beta, self.value_lambda, self.value_coef)
+        else:
+            w = jit_calculate_exp_util_from_costs(costs, self.gamma_seq, self.beta)
         return w
 
     def _compute_mean(self, w, actions):
@@ -198,21 +208,37 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
         new_mean = jit_blend_mean(self.mean_action, new_mean, self.step_size_mean)
         return new_mean
 
-    def _compute_mean_covariance(self, costs, actions):
+    def _compute_mean_covariance(self, costs, actions, value_costs=None):
         if self.cov_type == CovType.FULL_A:
             log_error("Not implemented")
         if self.cov_type == CovType.DIAG_A:
-            new_mean, new_cov, new_scale_tril = jit_mean_cov_diag_a(
-                costs,
-                actions,
-                self.gamma_seq,
-                self.mean_action,
-                self.cov_action,
-                self.step_size_mean,
-                self.step_size_cov,
-                self.kappa,
-                self.beta,
-            )
+            if value_costs is None:
+                new_mean, new_cov, new_scale_tril = jit_mean_cov_diag_a(
+                    costs,
+                    actions,
+                    self.gamma_seq,
+                    self.mean_action,
+                    self.cov_action,
+                    self.step_size_mean,
+                    self.step_size_cov,
+                    self.kappa,
+                    self.beta,
+                )
+            else:
+                new_mean, new_cov, new_scale_tril = jit_mean_cov_diag_a_value(
+                    costs,
+                    value_costs,
+                    actions,
+                    self.gamma_seq,
+                    self.mean_action,
+                    self.cov_action,
+                    self.step_size_mean,
+                    self.step_size_cov,
+                    self.kappa,
+                    self.beta,
+                    self.value_lambda,
+                    self.value_coef,
+                )
             self.scale_tril.copy_(new_scale_tril)
             # self._update_cov_scale(new_cov)
 
@@ -284,6 +310,7 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
     def _update_distribution(self, trajectories: Trajectory):
         costs = trajectories.costs
         actions = trajectories.actions
+        value_costs = trajectories.value_costs
 
         # Let's reshape to n_problems now:
 
@@ -293,13 +320,13 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
 
             # Update best action
             if self.sample_mode == SampleMode.BEST:
-                w = self._exp_util_from_costs(costs)
+                w = self._exp_util_from_costs(costs, value_costs)
                 best_idx = torch.argmax(w, dim=-1)
                 self.best_traj.copy_(actions[self.problem_col, best_idx])
         with profiler.record_function("mppi/store_rollouts"):
 
             if self.store_rollouts and self.visual_traj is not None:
-                total_costs = self._compute_total_cost(costs)
+                total_costs = self._compute_total_cost(costs, value_costs)
                 vis_seq = getattr(trajectories.state, self.visual_traj)
                 top_values, top_idx = torch.topk(total_costs, 20, dim=1)
                 self.top_values = top_values
@@ -316,11 +343,11 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
                     self.top_trajs.copy_(top_trajs)
 
         if not self.update_cov:
-            w = self._exp_util_from_costs(costs)
+            w = self._exp_util_from_costs(costs, value_costs)
             w = w.unsqueeze(-1).unsqueeze(-1)
             new_mean = self._compute_mean(w, actions)
         else:
-            new_mean, new_cov = self._compute_mean_covariance(costs, actions)
+            new_mean, new_cov = self._compute_mean_covariance(costs, actions, value_costs)
             self.cov_action.copy_(new_cov)
 
         self.mean_action.copy_(new_mean)
@@ -612,6 +639,16 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
 
         return super().generate_rollouts(init_act)
 
+@get_torch_jit_decorator()
+def jit_calculate_exp_util_from_value_costs(costs, value_costs, gamma_seq, beta: float, lambda_: float, value_coef: float):
+    cost_seq = gamma_seq * costs
+    cost_seq = torch.sum(cost_seq, dim=-1, keepdim=False) / gamma_seq[..., 0]
+    value_cost_seq = gamma_seq * value_costs
+    value_cost_seq = value_coef * torch.logsumexp((1/lambda_) * torch.sum(value_cost_seq, dim=-1, keepdim=False), dim=0)
+    # value_cost_seq = torch.clamp(value_cost_seq, min=0.)
+    cost_seq = cost_seq + value_cost_seq
+    w = torch.softmax((-1.0 / beta) * cost_seq, dim=-1)
+    return w
 
 @get_torch_jit_decorator()
 def jit_calculate_exp_util(beta: float, total_costs):
@@ -633,6 +670,12 @@ def jit_compute_total_cost(gamma_seq, costs):
     cost_seq = torch.sum(cost_seq, dim=-1, keepdim=False) / gamma_seq[..., 0]
     return cost_seq
 
+@get_torch_jit_decorator()
+def jit_compute_value_cost(gamma_seq, costs, lambda_: float, value_coef: float):
+    cost_seq = gamma_seq * costs
+    cost_seq = value_coef * torch.logsumexp((1/lambda_) * torch.sum(cost_seq, dim=-1, keepdim=False), dim=0)
+    # cost_seq = torch.clamp(cost_seq, min=0.)
+    return cost_seq
 
 @get_torch_jit_decorator()
 def jit_diag_a_cov_update(w, actions, mean_action):
@@ -671,6 +714,30 @@ def jit_mean_cov_diag_a(
     beta: float,
 ):
     w = jit_calculate_exp_util_from_costs(costs, gamma_seq, beta)
+    w = w.unsqueeze(-1).unsqueeze(-1)
+    new_mean = torch.sum(w * actions, dim=-3)
+    new_mean = jit_blend_mean(mean_action, new_mean, step_size_mean)
+    cov_update = jit_diag_a_cov_update(w, actions, mean_action)
+    new_cov = jit_blend_cov(cov_action, cov_update, step_size_cov, kappa)
+    new_tril = torch.sqrt(new_cov)
+    return new_mean, new_cov, new_tril
+
+@get_torch_jit_decorator()
+def jit_mean_cov_diag_a_value(
+    costs,
+    value_costs,
+    actions,
+    gamma_seq,
+    mean_action,
+    cov_action,
+    step_size_mean: float,
+    step_size_cov: float,
+    kappa: float,
+    beta: float,
+    lambda_: float,
+    value_coef: float,
+):
+    w = jit_calculate_exp_util_from_value_costs(costs, value_costs, gamma_seq, beta, lambda_, value_coef)
     w = w.unsqueeze(-1).unsqueeze(-1)
     new_mean = torch.sum(w * actions, dim=-3)
     new_mean = jit_blend_mean(mean_action, new_mean, step_size_mean)

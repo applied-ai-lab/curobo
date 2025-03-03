@@ -42,6 +42,7 @@ from curobo.util.torch_utils import get_torch_jit_decorator
 @dataclass
 class RolloutMetrics(Sequence):
     cost: Optional[T_BValue_float] = None
+    value_cost: Optional[T_BValue_float] = None
     constraint: Optional[T_BValue_float] = None
     feasible: Optional[T_BValue_bool] = None
     state: Optional[State] = None
@@ -62,6 +63,7 @@ class RolloutMetrics(Sequence):
             raise NotImplementedError()
         return RolloutMetrics(
             cost=None if self.cost is None else self.cost.clone(),
+            value_cost=None if self.value_cost is None else self.value_cost.clone(),
             constraint=None if self.constraint is None else self.constraint.clone(),
             feasible=None if self.feasible is None else self.feasible.clone(),
             state=None if self.state is None else self.state,
@@ -72,6 +74,7 @@ class RolloutMetrics(Sequence):
 class Trajectory:
     actions: T_BHDOF_float
     costs: T_BHValue_float
+    value_costs: Optional[T_BHValue_float] = None
     state: Optional[State] = None
     debug: Optional[dict] = None
 
@@ -411,6 +414,98 @@ class Goal(Sequence):
         g_seeds = g.repeat_seeds(num_seeds)
         return g_seeds
 
+
+@dataclass
+class Observation:
+    """Observation data class used to update optimization target.
+    #NOTE:
+    We can parallelize Observation in two ways:
+    1. Solve for current_state, pose pair in same environment
+    2. Solve for current_state, pose pair in different environment
+    For case (1), we use batch_pose_idx to find the memory address of the
+    current_state, pose pair while keeping batch_world_idx = [0]
+    For case (2), we add a batch_world_idx[0,1,2..].
+    """
+
+    name: str = "observation"
+    ee_position: Optional[torch.Tensor] = None
+    ee_orientation: Optional[torch.Tensor] = None
+    pcd_mean: Optional[torch.Tensor] = None
+    pcd_size: Optional[torch.Tensor] = None
+    obj_position: Optional[torch.Tensor] = None
+    obj_orientation: Optional[torch.Tensor] = None
+    features: Optional[torch.Tensor] = None
+    batch: int = -1  # NOTE: add another variable for size of index tensors?
+
+    def __len__(self):
+        return self.batch
+
+    def clone(self):
+        return Observation(
+            name=self.name,
+            ee_position=self.ee_position,
+            ee_orientation=self.ee_orientation,
+            pcd_mean=self.pcd_mean,
+            pcd_size=self.pcd_size,
+            obj_position=self.obj_position,
+            obj_orientation=self.obj_orientation,
+            features=self.features,
+        )
+
+    def to(self, tensor_args: TensorDeviceType):
+        if self.ee_position is not None:
+            self.ee_position = self.ee_position.to(tensor_args)
+        if self.ee_orientation is not None:
+            self.ee_orientation = self.ee_orientation.to(tensor_args)
+        if self.pcd_mean is not None:
+            self.pcd_mean = self.pcd_mean.to(tensor_args)
+        if self.pcd_size is not None:
+            self.pcd_size = self.pcd_size.to(tensor_args)
+        if self.obj_position is not None:
+            self.obj_position = self.obj_position.to(tensor_args)
+        if self.obj_orientation is not None:
+            self.obj_orientation = self.obj_orientation.to(tensor_args)
+        if self.features is not None:
+            self.features = self.features.to(tensor_args)
+        return self
+
+
+    def copy_(self, observation: Observation, update_idx_buffers: bool = True):
+        """Copy data from another goal object.
+        Args:
+            goal (Goal): _description_
+        Raises:
+            NotImplementedError: _description_
+            NotImplementedError: _description_
+        Returns:
+            _type_: _description_
+        """
+
+        self.ee_position = self._copy_buffer(self.ee_position, observation.ee_position)
+        self.ee_orientation = self._copy_buffer(self.ee_orientation, observation.ee_orientation)
+        self.pcd_mean = self._copy_buffer(self.pcd_mean, observation.pcd_mean)
+        self.pcd_size = self._copy_buffer(self.pcd_size, observation.pcd_size)
+        self.obj_position = self._copy_buffer(self.obj_position, observation.obj_position)
+        self.obj_orientation = self._copy_buffer(self.obj_orientation, observation.obj_orientation)
+        self.features = self._copy_buffer(self.features, observation.features)
+
+    def _copy_buffer(self, ref_buffer, buffer):
+        if buffer is not None:
+            if ref_buffer is not None:
+                ref_buffer = ref_buffer.copy_(buffer)
+            else:
+                log_info("breaking reference")
+                ref_buffer = buffer.clone()
+        return ref_buffer
+
+    def _copy_tensor(self, ref_buffer, buffer):
+        if buffer is not None:
+            if ref_buffer is not None and buffer.shape == ref_buffer.shape:
+                if not copy_tensor(buffer, ref_buffer):
+                    ref_buffer = buffer.clone()
+            else:
+                ref_buffer = buffer.clone()
+        return ref_buffer
 
 @dataclass
 class RolloutConfig:

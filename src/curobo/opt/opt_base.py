@@ -23,11 +23,11 @@ import torch
 import torch.autograd.profiler as profiler
 
 # CuRobo
-from curobo.rollout.rollout_base import Goal, RolloutBase
+from curobo.rollout.rollout_base import Goal, RolloutBase, Observation
 from curobo.types.base import TensorDeviceType
 from curobo.util.logger import log_info
 from curobo.util.torch_utils import is_cuda_graph_available
-
+from curobo.types.math import Pose
 
 @dataclass
 class OptimizerConfig:
@@ -173,6 +173,15 @@ class Optimizer(OptimizerConfig):
             torch.cuda.synchronize(device=self.tensor_args.device)
         self.opt_dt = time.time() - st_time
         return out
+
+    def update_object_pose(self, pose: Pose):
+        self.rollout_fn.update_object_pose(pose)
+
+    def update_observation(self, observation: Observation):
+        self.rollout_fn.update_observation(observation)
+
+    def set_value_fn(self, value_fn):
+        self.rollout_fn.value_cost.set_value_fn(value_fn)
 
     def update_params(self, goal: Goal):
         """Update parameters in the :meth:`curobo.rollout.rollout_base.RolloutBase` instance.

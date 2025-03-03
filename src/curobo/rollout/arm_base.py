@@ -30,15 +30,17 @@ from curobo.rollout.cost.primitive_collision_cost import (
 )
 from curobo.rollout.cost.self_collision_cost import SelfCollisionCost, SelfCollisionCostConfig
 from curobo.rollout.cost.stop_cost import StopCost, StopCostConfig
+from curobo.rollout.cost.value_cost import ValueCost, ValueCostConfig
 from curobo.rollout.dynamics_model.kinematic_model import (
     KinematicModel,
     KinematicModelConfig,
     KinematicModelState,
 )
-from curobo.rollout.rollout_base import Goal, RolloutBase, RolloutConfig, RolloutMetrics, Trajectory
+from curobo.rollout.rollout_base import Goal, RolloutBase, RolloutConfig, RolloutMetrics, Trajectory, Observation
 from curobo.types.base import TensorDeviceType
 from curobo.types.robot import CSpaceConfig, RobotConfig
 from curobo.types.state import JointState
+from curobo.types.math import Pose
 from curobo.util.logger import log_error, log_info, log_warn
 from curobo.util.tensor_util import cat_sum, cat_sum_horizon
 
@@ -51,6 +53,7 @@ class ArmCostConfig:
     stop_cfg: Optional[StopCostConfig] = None
     self_collision_cfg: Optional[SelfCollisionCostConfig] = None
     primitive_collision_cfg: Optional[PrimitiveCollisionCostConfig] = None
+    value_cfg: Optional[ValueCostConfig] = None
 
     @staticmethod
     def _get_base_keys():
@@ -60,6 +63,7 @@ class ArmCostConfig:
             "stop_cfg": StopCostConfig,
             "self_collision_cfg": SelfCollisionCostConfig,
             "bound_cfg": BoundCostConfig,
+            "value_cfg": ValueCostConfig,
         }
         return k_list
 
@@ -236,6 +240,7 @@ class ArmBase(RolloutBase, ArmBaseConfig):
     def _init_after_config_load(self):
         # self.current_state = None
         # self.retract_state = None
+        self._observation_buffer = Observation()
         self._goal_buffer = Goal()
         self._goal_idx_update = True
         # Create the dynamical system used for rollouts
@@ -335,10 +340,11 @@ class ArmBase(RolloutBase, ArmBaseConfig):
         self.update_cost_dt(self.dynamics_model.dt_traj_params.base_dt)
         return RolloutBase._init_after_config_load(self)
 
-    def cost_fn(self, state: KinematicModelState, action_batch=None, return_list=False):
+    def cost_fn(self, state: KinematicModelState, action_batch=None, return_list=False, return_dict=False):
         # ee_pos_batch, ee_rot_batch = state_dict["ee_pos_seq"], state_dict["ee_rot_seq"]
         state_batch = state.state_seq
         cost_list = []
+        cost_dict = {}
 
         # compute state bound  cost:
         if self.bound_cost.enabled:
@@ -349,16 +355,19 @@ class ArmBase(RolloutBase, ArmBaseConfig):
                     self._goal_buffer.batch_retract_state_idx,
                 )
                 cost_list.append(c)
+                cost_dict['bound'] = c
         if self.cost_cfg.manipulability_cfg is not None and self.manipulability_cost.enabled:
             raise NotImplementedError("Manipulability Cost is not implemented")
         if self.cost_cfg.stop_cfg is not None and self.stop_cost.enabled:
             st_cost = self.stop_cost.forward(state_batch.velocity)
             cost_list.append(st_cost)
+            cost_dict['stop'] = st_cost
         if self.cost_cfg.self_collision_cfg is not None and self.robot_self_collision_cost.enabled:
             with profiler.record_function("cost/self_collision"):
                 coll_cost = self.robot_self_collision_cost.forward(state.robot_spheres)
                 # cost += coll_cost
                 cost_list.append(coll_cost)
+                cost_dict['self_coll'] = coll_cost
         if (
             self.cost_cfg.primitive_collision_cfg is not None
             and self.primitive_collision_cost.enabled
@@ -369,7 +378,10 @@ class ArmBase(RolloutBase, ArmBaseConfig):
                     env_query_idx=self._goal_buffer.batch_world_idx,
                 )
                 cost_list.append(coll_cost)
+                cost_dict['coll'] = coll_cost
         if return_list:
+            if return_dict:
+                return cost_list, cost_dict
             return cost_list
         if self.sum_horizon:
             cost = cat_sum_horizon(cost_list)
@@ -437,6 +449,7 @@ class ArmBase(RolloutBase, ArmBaseConfig):
         out_metrics.state = state
         out_metrics = self.convergence_fn(state, out_metrics)
         out_metrics.cost = self.cost_fn(state)
+        out_metrics.value_cost = self.value_cost_fn(state)
         return out_metrics
 
     def get_metrics_cuda_graph(self, state: JointState):
@@ -602,9 +615,31 @@ class ArmBase(RolloutBase, ArmBaseConfig):
         with profiler.record_function("cost/all"):
             cost_seq = self.cost_fn(state, act_seq)
 
-        sim_trajs = Trajectory(actions=act_seq, costs=cost_seq, state=state)
+        with profiler.record_function("cost/value"):
+            value_cost_seq = self.value_cost_fn(state, act_seq)
 
+        sim_trajs = Trajectory(actions=act_seq, costs=cost_seq, state=state, value_costs=value_cost_seq)
         return sim_trajs
+    
+    def value_cost_fn(self, state: KinematicModelState, action_batch=None, return_dict=False):
+        return None
+
+    def update_object_pose(
+        self,
+        pose: Pose,
+    ):
+        """
+        Update object pose
+        """
+        self.object_pose = pose
+
+    def update_observation(
+        self,
+        observation: Observation,
+    ):
+        with profiler.record_function("arm_base/update_observation"):
+            self._observation_buffer.copy_(observation)
+        return True
 
     def update_params(self, goal: Goal):
         """
@@ -632,18 +667,36 @@ class ArmBase(RolloutBase, ArmBaseConfig):
         state = KinematicModelState(current_state, ee_pos_batch, ee_quat_batch)
         return state
 
-    def current_cost(self, current_state: JointState, no_coll=False, return_state=True, **kwargs):
+    def current_cost(self, current_state: JointState, no_coll=False, return_state=True, return_dict=False, **kwargs):
         state = self._get_augmented_state(current_state)
 
-        if "horizon_cost" not in kwargs:
-            kwargs["horizon_cost"] = False
+        # if "horizon_cost" not in kwargs:
+        #    kwargs["horizon_cost"] = False
 
-        cost = self.cost_fn(state, None, no_coll=no_coll, **kwargs)
+        if return_dict:
+            cost, cost_dict = self.cost_fn(state, None, return_dict=return_dict, **kwargs)
+            value_cost = self.value_cost_fn(state, None)
 
-        if return_state:
-            return cost, state
+            if value_cost is not None:
+                cost_dict['value'] = value_cost
+                cost += value_cost.mean(dim=0)
+
         else:
-            return cost
+            cost = self.cost_fn(state, None, return_dict=return_dict, **kwargs)
+            value_cost = self.value_cost_fn(state, None)
+            if value_cost is not None:
+                cost += value_cost.mean(dim=0)
+
+        if return_dict:
+            if return_state:
+                return cost, cost_dict, state
+            else:
+                return cost, cost_dict
+        else:
+            if return_state:
+                return cost, state
+            else:
+                return cost
 
     def filter_robot_state(self, current_state: JointState) -> JointState:
         return self.dynamics_model.filter_robot_state(current_state)
