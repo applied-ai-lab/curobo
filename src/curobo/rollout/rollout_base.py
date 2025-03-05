@@ -428,13 +428,16 @@ class Observation:
     """
 
     name: str = "observation"
-    ee_position: Optional[torch.Tensor] = None
-    ee_orientation: Optional[torch.Tensor] = None
-    pcd_mean: Optional[torch.Tensor] = None
-    pcd_size: Optional[torch.Tensor] = None
-    obj_position: Optional[torch.Tensor] = None
-    obj_orientation: Optional[torch.Tensor] = None
+    left_ee_pos: Optional[torch.Tensor] = None
+    left_ee_quat: Optional[torch.Tensor] = None
+    left_gripper_qpos: Optional[torch.Tensor] = None
+    object_pos: Optional[torch.Tensor] = None
+    object_quat: Optional[torch.Tensor] = None
+    object_to_left_ee_pos: Optional[torch.Tensor] = None
+    object_to_left_ee_quat: Optional[torch.Tensor] = None
     features: Optional[torch.Tensor] = None
+    images: Optional[torch.Tensor] = None
+    stack_states: int = 1
     batch: int = -1  # NOTE: add another variable for size of index tensors?
 
     def __len__(self):
@@ -443,32 +446,38 @@ class Observation:
     def clone(self):
         return Observation(
             name=self.name,
-            ee_position=self.ee_position,
-            ee_orientation=self.ee_orientation,
-            pcd_mean=self.pcd_mean,
-            pcd_size=self.pcd_size,
-            obj_position=self.obj_position,
-            obj_orientation=self.obj_orientation,
+            left_ee_pos=self.left_ee_pos,
+            left_ee_quat=self.left_ee_quat,
+            left_gripper_qpos=self.left_gripper_qpos,
+            object_pos=self.object_pos,
+            object_quat=self.object_quat,
+            object_to_left_ee_pos=self.object_to_left_ee_pos,
+            object_to_left_ee_quat=self.object_to_left_ee_quat,
             features=self.features,
+            images=self.images,
+            stack_states=self.stack_states,
         )
 
     def to(self, tensor_args: TensorDeviceType):
-        if self.ee_position is not None:
-            self.ee_position = self.ee_position.to(tensor_args)
-        if self.ee_orientation is not None:
-            self.ee_orientation = self.ee_orientation.to(tensor_args)
-        if self.pcd_mean is not None:
-            self.pcd_mean = self.pcd_mean.to(tensor_args)
-        if self.pcd_size is not None:
-            self.pcd_size = self.pcd_size.to(tensor_args)
-        if self.obj_position is not None:
-            self.obj_position = self.obj_position.to(tensor_args)
-        if self.obj_orientation is not None:
-            self.obj_orientation = self.obj_orientation.to(tensor_args)
+        if self.left_ee_pos is not None:
+            self.left_ee_pos = self.left_ee_pos.to(tensor_args)
+        if self.left_ee_quat is not None:
+            self.left_ee_quat = self.left_ee_quat.to(tensor_args)
+        if self.left_gripper_qpos is not None:
+            self.left_gripper_qpos = self.left_gripper_qpos.to(tensor_args)
+        if self.object_pos is not None:
+            self.object_pos = self.object_pos.to(tensor_args)
+        if self.object_quat is not None:
+            self.object_quat = self.object_quat.to(tensor_args)
+        if self.object_to_left_ee_pos is not None:
+            self.object_to_left_ee_pos = self.object_to_left_ee_pos.to(tensor_args)
+        if self.object_to_left_ee_quat is not None:
+            self.object_to_left_ee_quat = self.object_to_left_ee_quat.to(tensor_args)
         if self.features is not None:
             self.features = self.features.to(tensor_args)
+        if self.images is not None:
+            self.images = self.images.to(tensor_args)
         return self
-
 
     def copy_(self, observation: Observation, update_idx_buffers: bool = True):
         """Copy data from another goal object.
@@ -481,14 +490,24 @@ class Observation:
             _type_: _description_
         """
 
-        self.ee_position = self._copy_buffer(self.ee_position, observation.ee_position)
-        self.ee_orientation = self._copy_buffer(self.ee_orientation, observation.ee_orientation)
-        self.pcd_mean = self._copy_buffer(self.pcd_mean, observation.pcd_mean)
-        self.pcd_size = self._copy_buffer(self.pcd_size, observation.pcd_size)
-        self.obj_position = self._copy_buffer(self.obj_position, observation.obj_position)
-        self.obj_orientation = self._copy_buffer(self.obj_orientation, observation.obj_orientation)
+        self.left_ee_pos = self._copy_buffer(self.left_ee_pos, observation.left_ee_pos)
+        self.left_ee_quat = self._copy_buffer(self.left_ee_quat, observation.left_ee_quat)
+        self.left_gripper_qpos = self._copy_buffer(
+            self.left_gripper_qpos, observation.left_gripper_qpos
+        )
+        self.object_pos = self._copy_buffer(self.object_pos, observation.object_pos)
+        self.object_quat = self._copy_buffer(self.object_quat, observation.object_quat)
+        self.object_to_left_ee_pos = self._copy_buffer(
+            self.object_to_left_ee_pos, observation.object_to_left_ee_pos
+        )
+        self.object_to_left_ee_quat = self._copy_buffer(
+            self.object_to_left_ee_quat, observation.object_to_left_ee_quat
+        )
         self.features = self._copy_buffer(self.features, observation.features)
-
+        self.images = self._copy_buffer(self.images, observation.images)
+        self.stack_states = observation.stack_states
+        self.batch = observation.batch
+        
     def _copy_buffer(self, ref_buffer, buffer):
         if buffer is not None:
             if ref_buffer is not None:
