@@ -52,6 +52,9 @@ class ValueCost(CostBase, ValueCostConfig):
 
     def forward(self, state_batch, ee_pos_batch, ee_quat_batch, observation: Observation, goal: Goal):
         B, T, _ = ee_pos_batch.shape
+        
+        if ee_pos_batch.shape[1] == 1:
+            return torch.zeros(B, T, 1, device=ee_pos_batch.device)
 
         pos_error, axis_angle_error = compute_pose_error(
             ee_pos_batch[:, :-1].reshape(-1, 3),
@@ -62,8 +65,8 @@ class ValueCost(CostBase, ValueCostConfig):
         pos_error = pos_error.reshape(B, T-1, -1)
         axis_angle_error = axis_angle_error.reshape(B, T-1, -1)
         action = torch.cat([pos_error, axis_angle_error], dim=-1)
-        action /= 0.05
-        action = torch.clamp(action, -1, 1)            
+        action[:, :, :3] /= 0.05
+        action[:, :, 3:6] /= 0.5     
 
         gripper_qpos = state_batch.position[:, :, -1:]
         gripper_qpos = torch.cat([
@@ -72,8 +75,14 @@ class ValueCost(CostBase, ValueCostConfig):
         ], dim=-1)
         
         gripper_action = torch.where((gripper_qpos[:,1:, 0] - gripper_qpos[:, :-1, 0]) > 0, -1., 1.)
+        gripper_action[:] = -1.
+
         
-        action = torch.cat([action, gripper_action.unsqueeze(-1)], dim=-1)
+        action = torch.clamp(torch.cat([action, gripper_action.unsqueeze(-1)], dim=-1), -1., 1.)
+        dummy_action = torch.zeros(B, 1, action.shape[-1], device=action.device)
+        dummy_action[:, :, -1] = -1.
+        
+        action = torch.cat([action, dummy_action], dim=1)
         
         
         left_ee_pos = observation.left_ee_pos.reshape(-1, observation.stack_states, 3)
@@ -93,24 +102,11 @@ class ValueCost(CostBase, ValueCostConfig):
         gripper_qpos = torch.cat([
             gripper_qpos.unsqueeze(2),
             left_gripper_qpos.unsqueeze(1).repeat(B, T, 1, 1)[:, :, :-1],
-        ], dim=2)
+        ], dim=2).reshape(B, T, -1)
 
+        observation.object_to_left_ee_pos = left_ee_pos - observation.object_pos.unsqueeze(1).repeat(B, T, 1)
 
-        observation.object_to_left_ee_pos = left_ee_pos.reshape(B*T, -1) - observation.object_pos.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1)
-
-        states = TensorDict(
-            dict(
-                left_ee_pos=left_ee_pos.reshape(B*T, -1),
-                left_ee_quat=left_ee_quat.reshape(B*T, -1),
-                left_gripper_qpos=gripper_qpos.reshape(B*T, -1),
-                # left_gripper_qpos=observation.left_gripper_qpos.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1),
-                object_pos=observation.object_pos.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_pos is not None else None,
-                object_quat=observation.object_quat.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_quat is not None else None,
-                object_to_left_ee_pos=observation.object_to_left_ee_pos,
-                # object_to_left_ee_pos=observation.object_to_left_ee_pos.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_to_left_ee_pos is not None else None,
-                object_to_left_ee_quat=observation.object_to_left_ee_quat.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_to_left_ee_quat is not None else None,
-            )
-        )
+        action = action.reshape(B*T, -1)
         
         states = TensorDict(
             dict(
@@ -120,18 +116,21 @@ class ValueCost(CostBase, ValueCostConfig):
                 # left_gripper_qpos=observation.left_gripper_qpos.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1),
                 object_pos=observation.object_pos.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_pos is not None else None,
                 object_quat=observation.object_quat.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_quat is not None else None,
-                object_to_left_ee_pos=observation.object_to_left_ee_pos,
-                # object_to_left_ee_pos=observation.object_to_left_ee_pos.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_to_left_ee_pos is not None else None,
-                object_to_left_ee_quat=observation.object_to_left_ee_quat.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_to_left_ee_quat is not None else None,
-            )
+                object_to_left_ee_pos=observation.object_to_left_ee_pos.reshape(B*T, -1),
+                # object_to_left_ee_pos=observation.object_to_left_ee_pos.unsqueeze(1).repeat(B, T, 1) if observation.object_to_left_ee_pos is not None else None,
+                # object_to_left_ee_quat=observation.object_to_left_ee_quat.unsqueeze(1).repeat(B, T, 1) if observation.object_to_left_ee_quat is not None else None,
+            ),
+            batch_size=torch.tensor([B*T])
         )        
 
         batch = TensorDict(
             states=states,
+            batch_size=torch.tensor([B*T])
         )
          
         with torch.no_grad():
-            value = self.value_func(batch)
+            value = self.value_func(batch, action)
+            # value = self.value_func(batch)
             value = value.reshape(value.shape[0], B, T, 1)
 
         if value.shape[1] > 1: 
