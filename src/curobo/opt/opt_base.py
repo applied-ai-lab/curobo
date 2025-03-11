@@ -150,6 +150,8 @@ class Optimizer(OptimizerConfig):
         self._rollout_list = None
         self.debug = []
         self.debug_cost = []
+        self.debug_value_cost = []
+        self.debug_var = []
         self.cu_opt_graph = None
 
     def optimize(self, opt_tensor: torch.Tensor, shift_steps=0, n_iters=None) -> torch.Tensor:

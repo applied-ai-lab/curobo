@@ -37,7 +37,7 @@ A python example is available at :ref:`python_mpc_example`.
 # Standard Library
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, List
 
 # Third Party
 import torch
@@ -48,6 +48,7 @@ from curobo.geom.sdf.utils import create_collision_checker
 from curobo.geom.sdf.world import CollisionCheckerType, WorldCollision, WorldCollisionConfig
 from curobo.geom.types import WorldConfig
 from curobo.opt.newton.lbfgs import LBFGSOpt, LBFGSOptConfig
+from curobo.geom.sphere_fit import SphereFitType
 from curobo.opt.particle.parallel_es import ParallelES, ParallelESConfig
 from curobo.opt.particle.parallel_mppi import ParallelMPPI, ParallelMPPIConfig
 from curobo.rollout.arm_reacher import ArmReacher, ArmReacherConfig
@@ -929,3 +930,121 @@ class MpcSolver(MpcSolverConfig):
                 self._cu_state_in, shift_steps=shift_steps, seed_traj=self._cu_seed
             )
         self._cu_step_init = True
+
+
+    def attach_objects_to_robot(
+        self,
+        joint_state: JointState,
+        object_names: List[str],
+        surface_sphere_radius: float = 0.001,
+        link_name: str = "attached_object",
+        sphere_fit_type: SphereFitType = SphereFitType.VOXEL_VOLUME_SAMPLE_SURFACE,
+        voxelize_method: str = "ray",
+        world_objects_pose_offset: Optional[Pose] = None,
+        remove_obstacles_from_world_config: bool = False,
+    ) -> bool:
+        """Attach an object or objects from world to a robot's link.
+
+        This method assumes that the objects exist in the world configuration. If attaching
+        objects that are not in world, use :meth:`MotionGen.attach_external_objects_to_robot`.
+
+        Args:
+            joint_state: Joint state of the robot.
+            object_names: Names of objects in the world to attach to the robot.
+            surface_sphere_radius: Radius (in meters) to use for points sampled on surface of the
+                object. A smaller radius will allow for generating motions very close to obstacles.
+            link_name: Name of the link (frame) to attach the objects to. The assumption is that
+                this link does not have any geometry and all spheres of this link represent
+                attached objects.
+            sphere_fit_type: Sphere fit algorithm to use. See :ref:`attach_object_note` for more
+                details. The default method :attr:`SphereFitType.VOXEL_VOLUME_SAMPLE_SURFACE`
+                voxelizes the volume of the objects and adds spheres representing the voxels, then
+                samples points on the surface of the object, adds :attr:`surface_sphere_radius` to
+                these points. This should be used for most cases.
+            voxelize_method: Method to use for voxelization, passed to
+                :py:func:`trimesh.voxel.creation.voxelize`.
+            world_objects_pose_offset: Offset to apply to the object poses before attaching to the
+                robot. This is useful when attaching an object that's in contact with the world.
+                The offset is applied in the world frame before attaching to the robot.
+            remove_obstacles_from_world_config: Remove the obstacles from the world cache after
+                attaching to the robot to reduce memory usage. Note that when an object is attached
+                to the robot, it's disabled in the world collision checker. This flag when enabled,
+                also removes the object from world cache. For most cases, this should be set to
+                False.
+        """
+
+        log_info("MG: Attach objects to robot")
+        kin_state = self.compute_kinematics(joint_state)
+        ee_pose = kin_state.ee_pose  # w_T_ee
+        if world_objects_pose_offset is not None:
+            # add offset from ee:
+            ee_pose = world_objects_pose_offset.inverse().multiply(ee_pose)
+            # new ee_pose:
+            # w_T_ee = offset_T_w * w_T_ee
+            # ee_T_w
+        ee_pose = ee_pose.inverse()  # ee_T_w to multiply all objects later
+        max_spheres = self.robot_cfg.kinematics.kinematics_config.get_number_of_spheres(link_name)
+        n_spheres = int(max_spheres / len(object_names))
+        sphere_tensor = torch.zeros((max_spheres, 4))
+        sphere_tensor[:, 3] = -10.0
+        sph_list = []
+        if n_spheres == 0:
+            log_warn(
+                "MG: No spheres found, max_spheres: "
+                + str(max_spheres)
+                + " n_objects: "
+                + str(len(object_names))
+            )
+            return False
+        for i, x in enumerate(object_names):
+            obs = self.world_model.get_obstacle(x)
+            if obs is None:
+                log_error(
+                    "Object not found in world. Object name: "
+                    + x
+                    + " Name of objects in world: "
+                    + " ".join([i.name for i in self.world_model.objects])
+                )
+            sph = obs.get_bounding_spheres(
+                n_spheres,
+                surface_sphere_radius,
+                pre_transform_pose=ee_pose,
+                tensor_args=self.tensor_args,
+                fit_type=sphere_fit_type,
+                voxelize_method=voxelize_method,
+            )
+            sph_list += [s.position + [s.radius] for s in sph]
+
+            self.world_coll_checker.enable_obstacle(enable=False, name=x)
+            if remove_obstacles_from_world_config:
+                self.world_model.remove_obstacle(x)
+        log_info("MG: Computed spheres for attach objects to robot")
+
+        spheres = self.tensor_args.to_device(torch.as_tensor(sph_list))
+
+        if spheres.shape[0] > max_spheres:
+            spheres = spheres[: spheres.shape[0]]
+        sphere_tensor[: spheres.shape[0], :] = spheres.contiguous()
+
+        self.attach_spheres_to_robot(sphere_tensor=sphere_tensor, link_name=link_name)
+
+        return True
+    
+
+    def attach_spheres_to_robot(
+        self,
+        sphere_radius: Optional[float] = None,
+        sphere_tensor: Optional[torch.Tensor] = None,
+        link_name: str = "attached_object",
+    ) -> None:
+        """Attach spheres to robot's link.
+
+        Args:
+            sphere_radius: Radius of the spheres. Set to None if :attr:`sphere_tensor` is provided.
+            sphere_tensor: Sphere x, y, z, r tensor.
+            link_name: Name of the link to attach the spheres to. Note that this link should
+                already have pre-allocated spheres.
+        """
+        self.robot_cfg.kinematics.kinematics_config.attach_object(
+            sphere_radius=sphere_radius, sphere_tensor=sphere_tensor, link_name=link_name
+        )

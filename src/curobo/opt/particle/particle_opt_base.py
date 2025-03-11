@@ -272,6 +272,12 @@ class ParticleOptBase(Optimizer, ParticleOptConfig):
                 self.debug_cost.append(
                     torch.min(torch.sum(trajectory.costs, dim=-1), dim=-1)[0].unsqueeze(-1).clone()
                 )
+                min_index = torch.argmin(self.value_coef * torch.logsumexp((1/self.value_lambda) * torch.sum(trajectory.value_costs, dim=-1, keepdim=False), dim=0), dim=-1)
+                var = trajectory.value_costs[:, min_index].var(dim=0).mean()
+                self.debug_var.append(var)
+                self.debug_value_cost.append(
+                    torch.min(self.value_coef * torch.logsumexp((1/self.value_lambda) * torch.sum(trajectory.value_costs, dim=-1, keepdim=False), dim=0), dim=-1)[0].unsqueeze(-1).clone()
+                )
 
         curr_action_seq = self._get_action_seq(mode=self.sample_mode)
         return curr_action_seq
