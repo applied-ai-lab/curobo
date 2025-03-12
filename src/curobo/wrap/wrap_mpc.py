@@ -31,7 +31,7 @@ class WrapMpc(WrapBase):
 
     def update_init_seed(self, seed) -> bool:
         if self._init_act_seq is None:
-            self._init_act_seq = seed.detach.clone()
+            self._init_act_seq = seed.detach().clone()
         else:
             self._init_act_seq.copy_(seed)
         return True

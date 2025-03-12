@@ -37,7 +37,7 @@ A python example is available at :ref:`python_mpc_example`.
 # Standard Library
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional, Union, List
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Third Party
 import torch
@@ -1048,3 +1048,27 @@ class MpcSolver(MpcSolverConfig):
         self.robot_cfg.kinematics.kinematics_config.attach_object(
             sphere_radius=sphere_radius, sphere_tensor=sphere_tensor, link_name=link_name
         )
+        
+    def update_locked_joints(
+        self, lock_joints, robot_config_dict
+    ):
+        """Update locked joints in the robot configuration.
+
+        Use this function to update the joint values of currently locked joints between
+        planning calls. This function can also be used to change which joints are locked, however
+        this is only supported when the number of locked joints is the same as the original
+        robot configuration as the kinematics tensors are pre-allocated.
+
+        Args:
+            lock_joints: Dictionary of joint names and values to lock.
+            robot_config_dict: Robot configuration dictionary or path to robot configuration file.
+        """
+        if isinstance(robot_config_dict, str):
+            robot_config_dict = load_yaml(join_path(get_robot_configs_path(), robot_config_dict))[
+                "robot_cfg"
+            ]
+        if "robot_cfg" in robot_config_dict:
+            robot_config_dict = robot_config_dict["robot_cfg"]
+        robot_config_dict["kinematics"]["lock_joints"] = lock_joints
+        robot_cfg = RobotConfig.from_dict(robot_config_dict, self.tensor_args)
+        self.kinematics.update_kinematics_config(robot_cfg.kinematics.kinematics_config)
