@@ -20,6 +20,7 @@ import torch.autograd.profiler as profiler
 from curobo.geom.sdf.world import WorldCollision
 from curobo.rollout.cost.cost_base import CostConfig
 from curobo.rollout.cost.dist_cost import DistCost, DistCostConfig
+from curobo.rollout.cost.robosuite_cost import RobosuiteLiftCost, RobosuiteCostConfig
 from curobo.rollout.cost.pose_cost import PoseCost, PoseCostConfig, PoseCostMetric
 from curobo.rollout.cost.value_cost import ValueCost, ValueCostConfig
 from curobo.rollout.cost.straight_line_cost import StraightLineCost
@@ -93,6 +94,7 @@ class ArmReacherCostConfig(ArmCostConfig):
     zero_jerk_cfg: Optional[CostConfig] = None
     link_pose_cfg: Optional[PoseCostConfig] = None
     value_cfg: Optional[ValueCostConfig] = None
+    robosuite_cfg: Optional[RobosuiteCostConfig] = None
 
     @staticmethod
     def _get_base_keys():
@@ -107,6 +109,7 @@ class ArmReacherCostConfig(ArmCostConfig):
             "zero_jerk_cfg": CostConfig,
             "link_pose_cfg": PoseCostConfig,
             "value_cfg": ValueCostConfig,
+            'robosuite_cfg': RobosuiteCostConfig,
         }
         new_k.update(base_k)
         return new_k
@@ -217,6 +220,12 @@ class ArmReacher(ArmBase, ArmReacherConfig):
         if self.cost_cfg.value_cfg is not None:
             self.value_cost = ValueCost(self.cost_cfg.value_cfg)
 
+        if self.cost_cfg.robosuite_cfg is not None:
+            if self.cost_cfg.robosuite_cfg.task == 'lift':
+                self.robosuite_cost = RobosuiteLiftCost(self.cost_cfg.robosuite_cfg)
+            else:
+                raise NotImplementedError
+
         self.z_tensor = torch.tensor(
             0, device=self.tensor_args.device, dtype=self.tensor_args.dtype
         )
@@ -325,9 +334,11 @@ class ArmReacher(ArmBase, ArmReacherConfig):
             )
             cost_list.append(joint_cost)
             cost_dict['cspace'] = joint_cost
+            
         if self.cost_cfg.straight_line_cfg is not None and self.straight_line_cost.enabled:
             st_cost = self.straight_line_cost.forward(ee_pos_batch)
             cost_list.append(st_cost)
+            cost_dict['straight_line'] = st_cost
 
         if (
             self.cost_cfg.zero_acc_cfg is not None
@@ -340,12 +351,15 @@ class ArmReacher(ArmBase, ArmReacherConfig):
             )
 
             cost_list.append(z_acc)
+            cost_dict['zero_acc'] = z_acc
+
         if self.cost_cfg.zero_jerk_cfg is not None and self.zero_jerk_cost.enabled:
             z_jerk = self.zero_jerk_cost.forward(
                 state_batch.jerk,
                 g_dist,
             )
             cost_list.append(z_jerk)
+            cost_dict['zero_jerk'] = z_jerk
 
         if self.cost_cfg.zero_vel_cfg is not None and self.zero_vel_cost.enabled:
             z_vel = self.zero_vel_cost.forward(
@@ -353,6 +367,20 @@ class ArmReacher(ArmBase, ArmReacherConfig):
                 g_dist,
             )
             cost_list.append(z_vel)
+            cost_dict['zero_vel'] = z_vel
+
+
+        if self.cost_cfg.robosuite_cfg is not None and self.robosuite_cost.enabled:
+            robosuite_cost = self.robosuite_cost.forward(
+                state_batch,
+                ee_pos_batch,
+                ee_quat_batch,
+                action_batch,
+                self._observation_buffer,
+            )
+            cost_list.append(robosuite_cost)
+            cost_dict['robosuite'] = robosuite_cost
+
         with profiler.record_function("cat_sum"):
             if self.sum_horizon:
                 cost = cat_sum_horizon_reacher(cost_list)
@@ -437,6 +465,7 @@ class ArmReacher(ArmBase, ArmReacherConfig):
             )
 
         return out_metrics
+        
 
     def update_params(
         self,

@@ -91,6 +91,10 @@ class MpcSolverConfig:
     #: Capture full step in MPC as a single CUDA graph. This is not supported currently.
     use_cuda_graph_full_step: bool = False
 
+    #: Robot configuration.
+    robot_cfg: Union[str, dict, RobotConfig] = None
+
+
     @staticmethod
     def load_from_robot_config(
         robot_cfg: Union[Union[str, dict], RobotConfig],
@@ -324,6 +328,7 @@ class MpcSolverConfig:
             use_cuda_graph_full_step=use_cuda_graph_full_step,
             world_coll_checker=world_coll_checker,
             rollout_fn=arm_rollout_aux,
+            robot_cfg=robot_cfg,
         )
 
 
@@ -997,13 +1002,13 @@ class MpcSolver(MpcSolverConfig):
             )
             return False
         for i, x in enumerate(object_names):
-            obs = self.world_model.get_obstacle(x)
+            obs = self.rollout_fn.world_coll_checker.world_model.get_obstacle(x)
             if obs is None:
                 log_error(
                     "Object not found in world. Object name: "
                     + x
                     + " Name of objects in world: "
-                    + " ".join([i.name for i in self.world_model.objects])
+                    + " ".join([i.name for i in self.rollout_fn.world_coll_checker.world_model.objects])
                 )
             sph = obs.get_bounding_spheres(
                 n_spheres,
@@ -1045,7 +1050,7 @@ class MpcSolver(MpcSolverConfig):
             link_name: Name of the link to attach the spheres to. Note that this link should
                 already have pre-allocated spheres.
         """
-        self.robot_cfg.kinematics.kinematics_config.attach_object(
+        self.kinematics.kinematics_config.attach_object(
             sphere_radius=sphere_radius, sphere_tensor=sphere_tensor, link_name=link_name
         )
         

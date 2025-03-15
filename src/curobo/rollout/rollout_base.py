@@ -437,6 +437,7 @@ class Observation:
     object_to_left_ee_rot: Optional[torch.Tensor] = None
     features: Optional[torch.Tensor] = None
     images: Optional[torch.Tensor] = None
+    grasped: Optional[torch.Tensor] = None
     stack_states: int = 1
     batch: int = -1  # NOTE: add another variable for size of index tensors?
 
@@ -455,6 +456,7 @@ class Observation:
             object_to_left_ee_rot=self.object_to_left_ee_rot,
             features=self.features,
             images=self.images,
+            grasped=self.grasped,
             stack_states=self.stack_states,
         )
 
@@ -477,6 +479,8 @@ class Observation:
             self.features = self.features.to(tensor_args)
         if self.images is not None:
             self.images = self.images.to(tensor_args)
+        if self.grasped is not None:
+            self.grasped = self.grasped.to(tensor_args)
         return self
 
     def copy_(self, observation: Observation, update_idx_buffers: bool = True):
@@ -505,6 +509,7 @@ class Observation:
         )
         self.features = self._copy_buffer(self.features, observation.features)
         self.images = self._copy_buffer(self.images, observation.images)
+        self.grasped = self._copy_buffer(self.grasped, observation.grasped)
         self.stack_states = observation.stack_states
         self.batch = observation.batch
         
