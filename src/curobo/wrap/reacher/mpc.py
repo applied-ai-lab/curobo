@@ -581,7 +581,7 @@ class MpcSolver(MpcSolverConfig):
         """Enable or disable reaching joint configuration cost in the solver.
 
         Args:
-            enable: Enable or disable reaching joint configuration cost. When False, cspace cost
+        enable: Enable or disable reaching joint configuration cost. When False, cspace cost
                 is disabled.
         """
         self.solver.safety_rollout.enable_cspace_cost(enable)

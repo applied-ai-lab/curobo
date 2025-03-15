@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
 from itertools import accumulate
+import matplotlib.pyplot as plt
 
 # Third Party
 import torch
@@ -25,6 +26,7 @@ from tensordict import TensorDict
 # CuRobo
 from curobo.rollout.rollout_base import Goal, Observation
 from curobo.geom.transform import quaternion_to_matrix, axis_angle_from_quat, compute_pose_error
+from curobo.util.rotation_transformer import RotationTransformer
 # Local Folder
 from .cost_base import CostBase, CostConfig
 
@@ -42,6 +44,8 @@ class ValueCost(CostBase, ValueCostConfig):
     def __init__(self, config: ValueCostConfig):
         ValueCostConfig.__init__(self, **vars(config))
         CostBase.__init__(self)
+
+        self.rotation_transformer = RotationTransformer(from_rep="quaternion", to_rep="rotation_6d")
 
         self.value_func = None
 
@@ -63,6 +67,20 @@ class ValueCost(CostBase, ValueCostConfig):
             ee_quat_batch[:, 1:].reshape(-1, 4),
         )
         pos_error = pos_error.reshape(B, T-1, -1)
+        
+        
+        action_norm = torch.norm(pos_error.reshape(B*(T-1), -1), dim=-1).cpu().numpy()
+        # Plot the histogram
+        plt.figure(figsize=(8, 6))
+        plt.hist(action_norm, bins=20, edgecolor='black', alpha=0.7)
+        plt.title("Distribution of Delta Action Norms")
+        plt.xlabel("Delta Action Norm")
+        plt.ylabel("Frequency")
+        plt.grid(True)
+        plt.savefig('./plot_action_norm_mpc.png')
+        # import pdb
+        # pdb.set_trace()
+        
         axis_angle_error = axis_angle_error.reshape(B, T-1, -1)
         action = torch.cat([pos_error, axis_angle_error], dim=-1)
         action[:, :, :3] /= 0.05
@@ -90,8 +108,8 @@ class ValueCost(CostBase, ValueCostConfig):
         # action = torch.cat([action, dummy_action], dim=1)
         
         
-        left_ee_pos = observation.left_ee_pos.reshape(-1, observation.stack_states, 3)
-        left_ee_quat = observation.left_ee_quat.reshape(-1, observation.stack_states, 4)
+        # left_ee_pos = observation.left_ee_pos.reshape(-1, observation.stack_states, 3)
+        # left_ee_quat = observation.left_ee_quat.reshape(-1, observation.stack_states, 4)
         left_gripper_qpos = observation.left_gripper_qpos.reshape(-1, observation.stack_states, 2)
         
         gripper_qpos = left_gripper_qpos.repeat(B*T, 1, 1).reshape(B, T, -1)
@@ -118,8 +136,10 @@ class ValueCost(CostBase, ValueCostConfig):
         #     left_ee_quat[:, 1:-2],
         # ], dim=-1)
 
-        left_ee_pos = ee_pos_batch
-        left_ee_quat = ee_quat_batch
+        # left_ee_pos = ee_pos_batch
+        # left_ee_quat = ee_quat_batch
+
+        ee_rot_batch = self.rotation_transformer.forward(ee_quat_batch)
 
         # gripper_qpos = torch.cat([
         #     left_gripper_qpos.repeat(B, 1, 1).flip(1),
@@ -133,19 +153,19 @@ class ValueCost(CostBase, ValueCostConfig):
         # ], dim=-1)
         
 
-        object_to_left_ee_pos = left_ee_pos - observation.object_pos.unsqueeze(1).repeat(B, T, 1)
+        object_to_left_ee_pos = ee_pos_batch - observation.object_pos.unsqueeze(1).repeat(B, T, 1)
         # object_to_left_ee_pos = observation.object_to_left_ee_pos.unsqueeze(1).repeat(B, T, 1)
 
         # action = action.reshape(B*T, -1)
         
         states = TensorDict(
             dict(
-                left_ee_pos=left_ee_pos.reshape(B*T, -1),
-                left_ee_quat=left_ee_quat.reshape(B*T, -1),
+                left_ee_pos=ee_pos_batch.reshape(B*T, -1),
+                left_ee_rot=ee_rot_batch.reshape(B*T, -1),
                 left_gripper_qpos=gripper_qpos.reshape(B*T, -1),
                 # left_gripper_qpos=observation.left_gripper_qpos.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1),
                 object_pos=observation.object_pos.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_pos is not None else None,
-                object_quat=observation.object_quat.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_quat is not None else None,
+                object_rot=observation.object_rot.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_rot is not None else None,
                 object_to_left_ee_pos=object_to_left_ee_pos.reshape(B*T, -1),
                 # object_to_left_ee_pos=observation.object_to_left_ee_pos.unsqueeze(1).repeat(B, T, 1) if observation.object_to_left_ee_pos is not None else None,
                 # object_to_left_ee_quat=observation.object_to_left_ee_quat.unsqueeze(1).repeat(B, T, 1) if observation.object_to_left_ee_quat is not None else None,
@@ -157,22 +177,25 @@ class ValueCost(CostBase, ValueCostConfig):
             states=states,
             batch_size=torch.tensor([B*T])
         )
-        # batch = batch.reshape(B, T)
+        batch = batch.reshape(B, T)
         # action = action.reshape(B, T, -1)
 
         with torch.no_grad():
             prop = torch.cat([
-                left_ee_pos,
-                left_ee_quat,
+                ee_pos_batch,
+                ee_rot_batch,
                 gripper_qpos,
             ], dim=-1)
             # value = self.value_func(batch, action)   
-            # value = self.value_func(batch[:, 0], prop)
-            value = self.value_func(batch)
+            value = self.value_func(batch[:, 0], prop)
+            # value = self.value_func(batch)
+            # print(f'mean: {value[:, 0, 0].mean()}, var: {value[:, 0, 0].var()}')
             # value = value.unsqueeze(2).repeat(1, 1, T, 1)
             # value = self.value_func(batch, action)
             # value = self.value_func(batch)
             value = value.reshape(value.shape[0], B, T, 1)
+            value = value.mean(dim=0).unsqueeze(0) + 5*value.var(dim=0).unsqueeze(0)
+            # value = value.max(dim=0).values.unsqueeze(0)
             # print(value[0][0])
             # value = value.unsqueeze(-1)
 

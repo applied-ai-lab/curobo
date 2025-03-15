@@ -429,12 +429,12 @@ class Observation:
 
     name: str = "observation"
     left_ee_pos: Optional[torch.Tensor] = None
-    left_ee_quat: Optional[torch.Tensor] = None
+    left_ee_rot: Optional[torch.Tensor] = None
     left_gripper_qpos: Optional[torch.Tensor] = None
     object_pos: Optional[torch.Tensor] = None
-    object_quat: Optional[torch.Tensor] = None
+    object_rot: Optional[torch.Tensor] = None
     object_to_left_ee_pos: Optional[torch.Tensor] = None
-    object_to_left_ee_quat: Optional[torch.Tensor] = None
+    object_to_left_ee_rot: Optional[torch.Tensor] = None
     features: Optional[torch.Tensor] = None
     images: Optional[torch.Tensor] = None
     stack_states: int = 1
@@ -447,12 +447,12 @@ class Observation:
         return Observation(
             name=self.name,
             left_ee_pos=self.left_ee_pos,
-            left_ee_quat=self.left_ee_quat,
+            left_ee_rot=self.left_ee_rot,
             left_gripper_qpos=self.left_gripper_qpos,
             object_pos=self.object_pos,
-            object_quat=self.object_quat,
+            object_rot=self.object_rot,
             object_to_left_ee_pos=self.object_to_left_ee_pos,
-            object_to_left_ee_quat=self.object_to_left_ee_quat,
+            object_to_left_ee_rot=self.object_to_left_ee_rot,
             features=self.features,
             images=self.images,
             stack_states=self.stack_states,
@@ -461,18 +461,18 @@ class Observation:
     def to(self, tensor_args: TensorDeviceType):
         if self.left_ee_pos is not None:
             self.left_ee_pos = self.left_ee_pos.to(tensor_args)
-        if self.left_ee_quat is not None:
-            self.left_ee_quat = self.left_ee_quat.to(tensor_args)
+        if self.left_ee_rot is not None:
+            self.left_ee_rot = self.left_ee_rot.to(tensor_args)
         if self.left_gripper_qpos is not None:
             self.left_gripper_qpos = self.left_gripper_qpos.to(tensor_args)
         if self.object_pos is not None:
             self.object_pos = self.object_pos.to(tensor_args)
-        if self.object_quat is not None:
-            self.object_quat = self.object_quat.to(tensor_args)
+        if self.object_rot is not None:
+            self.object_rot = self.object_rot.to(tensor_args)
         if self.object_to_left_ee_pos is not None:
             self.object_to_left_ee_pos = self.object_to_left_ee_pos.to(tensor_args)
-        if self.object_to_left_ee_quat is not None:
-            self.object_to_left_ee_quat = self.object_to_left_ee_quat.to(tensor_args)
+        if self.object_to_left_ee_rot is not None:
+            self.object_to_left_ee_rot = self.object_to_left_ee_rot.to(tensor_args)
         if self.features is not None:
             self.features = self.features.to(tensor_args)
         if self.images is not None:
@@ -491,17 +491,17 @@ class Observation:
         """
 
         self.left_ee_pos = self._copy_buffer(self.left_ee_pos, observation.left_ee_pos)
-        self.left_ee_quat = self._copy_buffer(self.left_ee_quat, observation.left_ee_quat)
+        self.left_ee_rot = self._copy_buffer(self.left_ee_rot, observation.left_ee_rot)
         self.left_gripper_qpos = self._copy_buffer(
             self.left_gripper_qpos, observation.left_gripper_qpos
         )
         self.object_pos = self._copy_buffer(self.object_pos, observation.object_pos)
-        self.object_quat = self._copy_buffer(self.object_quat, observation.object_quat)
+        self.object_rot = self._copy_buffer(self.object_rot, observation.object_rot)
         self.object_to_left_ee_pos = self._copy_buffer(
             self.object_to_left_ee_pos, observation.object_to_left_ee_pos
         )
-        self.object_to_left_ee_quat = self._copy_buffer(
-            self.object_to_left_ee_quat, observation.object_to_left_ee_quat
+        self.object_to_left_ee_rot = self._copy_buffer(
+            self.object_to_left_ee_rot, observation.object_to_left_ee_rot
         )
         self.features = self._copy_buffer(self.features, observation.features)
         self.images = self._copy_buffer(self.images, observation.images)
