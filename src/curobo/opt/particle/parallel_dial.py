@@ -50,7 +50,7 @@ class CovType(Enum):
 
 
 @dataclass
-class ParallelMPPIConfig(ParticleOptConfig):
+class ParallelDIALConfig(ParticleOptConfig):
     init_mean: float
     init_cov: float
     base_action: BaseActionType
@@ -69,6 +69,8 @@ class ParallelMPPIConfig(ParticleOptConfig):
     sample_per_problem: bool
     value_lambda: float = 60.
     value_coef: float = 200.
+    horizon_diffuse_factor: float = 0.9
+    traj_diffuse_factor: float = 0.5
 
     def __post_init__(self):
         self.init_cov = self.tensor_args.to_device(self.init_cov).unsqueeze(0)
@@ -102,28 +104,17 @@ class ParallelMPPIConfig(ParticleOptConfig):
         return child_dict
 
 
-class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
+class ParallelDIAL(ParticleOptBase, ParallelDIALConfig):
     @profiler.record_function("parallel_mppi/init")
-    def __init__(self, config: Optional[ParallelMPPIConfig] = None):
+    def __init__(self, config: Optional[ParallelDIALConfig] = None):
         if config is not None:
-            ParallelMPPIConfig.__init__(self, **vars(config))
+            ParallelDIALConfig.__init__(self, **vars(config))
         ParticleOptBase.__init__(self)
 
         self.sample_lib = SampleLib(self.sample_params)
         self._sample_set = None
         self._sample_iter = None
         # initialize covariance types:
-        if self.cov_type == CovType.FULL_HA:
-            self.I = torch.eye(
-                self.action_horizon * self.d_action,
-                device=self.tensor_args.device,
-                dtype=self.tensor_args.dtype,
-            )
-
-        else:  # AxA
-            self.I = torch.eye(
-                self.d_action, device=self.tensor_args.device, dtype=self.tensor_args.dtype
-            )
 
         self.Z_seq = torch.zeros(
             1,
@@ -163,6 +154,19 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
         self._batch_size = -1
         self._store_debug = False
 
+        sigma0 = 1e-2
+        sigma1 = 1.0
+        A = sigma0
+
+        B = torch.log(torch.tensor(sigma1 / sigma0)).to(self.tensor_args.device) / self.n_iters
+        self.sigmas = A * torch.exp(B * torch.arange(self.n_iters).to(self.tensor_args.device))
+        self.sigma_control = (
+            self.horizon_diffuse_factor ** torch.flip(torch.arange(self.horizon+1), dims=[0])
+        )
+        self.traj_diffuse_factors = (
+            self.sigma_control * self.traj_diffuse_factor ** (torch.arange(self.n_iters))[:, None]
+        ).to(self.tensor_args.device)
+
     def get_rollouts(self):
         return self.top_trajs
 
@@ -172,7 +176,6 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
         """
 
         self.reset_mean()
-        self.reset_covariance()
 
     def _compute_total_cost(self, costs, value_costs=None):
         """
@@ -208,103 +211,6 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
         new_mean = jit_blend_mean(self.mean_action, new_mean, self.step_size_mean)
         return new_mean
 
-    def _compute_mean_covariance(self, costs, actions, value_costs=None):
-        if self.cov_type == CovType.FULL_A:
-            log_error("Not implemented")
-        if self.cov_type == CovType.DIAG_A:
-            if value_costs is None:
-                new_mean, new_cov, new_scale_tril = jit_mean_cov_diag_a(
-                    costs,
-                    actions,
-                    self.gamma_seq,
-                    self.mean_action,
-                    self.cov_action,
-                    self.step_size_mean,
-                    self.step_size_cov,
-                    self.kappa,
-                    self.beta,
-                )
-            else:
-                new_mean, new_cov, new_scale_tril = jit_mean_cov_diag_a_value(
-                    costs,
-                    value_costs,
-                    actions,
-                    self.gamma_seq,
-                    self.mean_action,
-                    self.cov_action,
-                    self.step_size_mean,
-                    self.step_size_cov,
-                    self.kappa,
-                    self.beta,
-                    self.value_lambda,
-                    self.value_coef,
-                )
-            self.scale_tril.copy_(new_scale_tril)
-            # self._update_cov_scale(new_cov)
-
-        else:
-            w = self._exp_util_from_costs(costs)
-            w = w.unsqueeze(-1).unsqueeze(-1)
-            new_mean = self._compute_mean(w, actions)
-            new_cov = self._compute_covariance(w, actions)
-            self._update_cov_scale(new_cov)
-
-        return new_mean, new_cov
-
-    def _compute_covariance(self, w, actions):
-        if not self.update_cov:
-            return
-        # w = w.squeeze(-1).squeeze(-1)
-        # w = w[0, :]
-        if self.cov_type == CovType.SIGMA_I:
-            delta_actions = actions - self.mean_action.unsqueeze(-3)
-
-            weighted_delta = w * (delta_actions**2)
-            cov_update = torch.mean(
-                torch.sum(torch.sum(weighted_delta, dim=-2), dim=-1), dim=-1, keepdim=True
-            )
-
-        elif self.cov_type == CovType.DIAG_A:
-
-            cov_update = jit_diag_a_cov_update(w, actions, self.mean_action)
-
-        elif self.cov_type == CovType.FULL_A:
-            delta_actions = actions - self.mean_action.unsqueeze(-3)
-
-            delta = delta_actions[0, ...]
-
-            raise NotImplementedError
-        elif self.cov_type == CovType.FULL_HA:
-            delta_actions = actions - self.mean_action.unsqueeze(-3)
-
-            delta = delta_actions[0, ...]
-
-            weighted_delta = (
-                torch.sqrt(w) * delta.view(delta.shape[0], delta.shape[1] * delta.shape[2]).T
-            )  # .unsqueeze(-1)
-            cov_update = torch.matmul(weighted_delta, weighted_delta.T)
-
-        else:
-            raise ValueError("Unidentified covariance type in update_distribution")
-        cov_update = jit_blend_cov(self.cov_action, cov_update, self.step_size_cov, self.kappa)
-        return cov_update
-
-    def _update_cov_scale(self, new_cov=None):
-        if new_cov is None:
-            new_cov = self.cov_action
-        if not self.update_cov:
-            return
-        if self.cov_type == CovType.SIGMA_I:
-            self.scale_tril = torch.sqrt(new_cov)
-
-        elif self.cov_type == CovType.DIAG_A:
-            self.scale_tril.copy_(torch.sqrt(new_cov))
-
-        elif self.cov_type == CovType.FULL_A:
-            self.scale_tril = matrix_cholesky(new_cov)
-
-        elif self.cov_type == CovType.FULL_HA:
-            raise NotImplementedError
 
     @torch.no_grad()
     def _update_distribution(self, trajectories: Trajectory):
@@ -315,7 +221,6 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
         # Let's reshape to n_problems now:
 
         # first find the means before doing exponential utility:
-
         with profiler.record_function("mppi/get_best"):
 
             # Update best action
@@ -342,29 +247,35 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
                 else:
                     self.top_trajs.copy_(top_trajs)
 
-        if not self.update_cov:
-            w = self._exp_util_from_costs(costs, value_costs)
-            w = w.unsqueeze(-1).unsqueeze(-1)
-            new_mean = self._compute_mean(w, actions)
-        else:
-            new_mean, new_cov = self._compute_mean_covariance(costs, actions, value_costs)
-            self.cov_action.copy_(new_cov)
+        w = self._exp_util_from_costs(costs, value_costs)
+        w = w.unsqueeze(-1).unsqueeze(-1)
+        new_mean = self._compute_mean(w, actions)
 
         self.mean_action.copy_(new_mean)
 
     @torch.no_grad()
     def sample_actions(self, init_act):
         delta = torch.index_select(self._sample_set, 0, self._sample_iter).squeeze(0)
+        # self._sample_iter[:] += 1
+        self._sample_iter_n += 1
+
         if not self.sample_params.fixed_samples:
             self._sample_iter[:] += 1
-            self._sample_iter_n += 1
+
             if self._sample_iter_n >= self.n_iters:
-                self._sample_iter_n = 0
                 self._sample_iter[:] = 0
                 log_info(
                     "Resetting sample iterations in particle opt base to 0, this is okay during graph capture"
                 )
-        scaled_delta = delta * self.full_scale_tril
+
+        if self._sample_iter_n >= self.n_iters:
+            self._sample_iter_n = 0
+
+        scaled_delta = delta * self.traj_diffuse_factors[self._sample_iter_n-1][:self.horizon].view(1, 1, -1, 1)
+        # scaled_delta = delta 
+        #TODO multiply diffusion factor
+
+
         act_seq = self.mean_action.unsqueeze(-3) + scaled_delta
         cat_list = [act_seq]
 
@@ -385,7 +296,7 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
         )
         act_seq = act_seq.reshape(self.total_num_particles, self.action_horizon, self.d_action)
         act_seq = scale_ctrl(act_seq, self.action_lows, self.action_highs, squash_fn=self.squash_fn)
-
+        # import pdb; pdb.set_trace()
         # if not copy_tensor(act_seq, self.act_seq):
         #    self.act_seq = act_seq
         return act_seq  # self.act_seq
@@ -411,42 +322,6 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
             else:
                 self.update_init_mean(self.init_mean)
 
-    def reset_covariance(self):
-        with profiler.record_function("mppi/reset_cov"):
-            # init_cov can either be a single value, or n_problems x 1 or n_problems x d_action
-
-            if self.cov_type == CovType.SIGMA_I:
-                # init_cov can either be a single value, or n_problems x 1
-                self.cov_action = self.init_cov
-                if self.init_cov.shape[0] != self.n_problems:
-                    self.cov_action = self.init_cov.unsqueeze(0).expand(self.n_problems, -1)
-                self.inv_cov_action = 1.0 / self.cov_action
-                a = torch.sqrt(self.cov_action)
-                if not copy_tensor(a, self.scale_tril):
-                    self.scale_tril = a
-
-            elif self.cov_type == CovType.DIAG_A:
-                # init_cov can either be a single value, or n_problems x 1 or n_problems x 7
-                init_cov = self.init_cov.clone()
-
-                # if(init_cov.shape[-1] != self.d_action):
-                if len(init_cov.shape) == 1:
-                    init_cov = init_cov.unsqueeze(-1).expand(-1, self.d_action)
-                if len(init_cov.shape) == 2 and init_cov.shape[-1] != self.d_action:
-                    init_cov = init_cov.expand(-1, self.d_action)
-                init_cov = init_cov.unsqueeze(1)
-                if init_cov.shape[0] != self.n_problems:
-                    init_cov = init_cov.expand(self.n_problems, -1, -1)
-                if not copy_tensor(init_cov.clone(), self.cov_action):
-                    self.cov_action = init_cov.clone()
-                self.inv_cov_action = 1.0 / self.cov_action
-                a = torch.sqrt(self.cov_action)
-                if not copy_tensor(a, self.scale_tril):
-                    self.scale_tril = a
-
-            else:
-                raise ValueError("Unidentified covariance type in update_distribution")
-
     def _get_action_seq(self, mode: SampleMode):
         if mode == SampleMode.MEAN:
             act_seq = self.mean_action  # .clone()  # [self.mean_idx]#.clone()
@@ -471,24 +346,6 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
         """
         delta = self.sample_lib.get_samples(sample_shape=shape, seed=base_seed)
         return delta
-
-    @property
-    def full_scale_tril(self):
-        """Returns the full scale tril
-
-        Returns:
-            Tensor: dimension is (d_action, d_action)
-        """
-        if self.cov_type == CovType.SIGMA_I:
-            return (
-                self.scale_tril.unsqueeze(-2).unsqueeze(-2).expand(-1, -1, self.action_horizon, -1)
-            )
-        elif self.cov_type == CovType.DIAG_A:
-            return self.scale_tril.unsqueeze(-2).expand(-1, -1, self.action_horizon, -1)  # .cl
-        elif self.cov_type == CovType.FULL_A:
-            return self.scale_tril
-        elif self.cov_type == CovType.FULL_HA:
-            return self.scale_tril
 
     def _calc_val(self, trajectories: Trajectory):
         costs = trajectories.costs
@@ -516,45 +373,6 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
             self.mean_action, self.action_lows, self.action_highs, squash_fn=self.squash_fn
         )
 
-    @property
-    def full_cov(self):
-        if self.cov_type == CovType.SIGMA_I:
-            return self.cov_action * self.I
-        elif self.cov_type == CovType.DIAG_A:
-            return torch.diag(self.cov_action)
-        elif self.cov_type == CovType.FULL_A:
-            return self.cov_action
-        elif self.cov_type == CovType.FULL_HA:
-            return self.cov_action
-
-    @property
-    def full_inv_cov(self):
-        if self.cov_type == CovType.SIGMA_I:
-            return self.inv_cov_action * self.I
-        elif self.cov_type == CovType.DIAG_A:
-            return torch.diag_embed(self.inv_cov_action)
-        elif self.cov_type == CovType.FULL_A:
-            return self.inv_cov_action
-        elif self.cov_type == CovType.FULL_HA:
-            return self.inv_cov_action
-
-    @property
-    def full_scale_tril(self):
-        if self.cov_type == CovType.SIGMA_I:
-            return (
-                self.scale_tril.unsqueeze(-2).unsqueeze(-2).expand(-1, -1, self.action_horizon, -1)
-            )  # .cl
-        elif self.cov_type == CovType.DIAG_A:
-            return self.scale_tril.unsqueeze(-2).expand(-1, -1, self.action_horizon, -1)  # .cl
-        elif self.cov_type == CovType.FULL_A:
-            return self.scale_tril
-        elif self.cov_type == CovType.FULL_HA:
-            return self.scale_tril
-
-    @property
-    def entropy(self):
-        ent_L = gaussian_entropy(L=self.full_scale_tril)
-        return ent_L
 
     def reset_seed(self):
         self.sample_lib = SampleLib(self.sample_params)
@@ -678,22 +496,6 @@ def jit_compute_value_cost(gamma_seq, costs, lambda_: float, value_coef: float):
     # cost_seq = torch.clamp(cost_seq, min=0.)
     return cost_seq
 
-@get_torch_jit_decorator()
-def jit_diag_a_cov_update(w, actions, mean_action):
-    delta_actions = actions - mean_action.unsqueeze(-3)
-
-    weighted_delta = w * (delta_actions**2)
-    # weighted_delta =
-    # sum across horizon and mean across particles:
-    # cov_update = torch.diag(torch.mean(torch.sum(weighted_delta.T  , dim=0), dim=0))
-    cov_update = torch.mean(torch.sum(weighted_delta, dim=-2), dim=-2).unsqueeze(-2)
-    return cov_update
-
-
-@get_torch_jit_decorator()
-def jit_blend_cov(cov_action, cov_update, step_size_cov: float, kappa: float):
-    new_cov = (1.0 - step_size_cov) * cov_action + step_size_cov * cov_update + kappa
-    return new_cov
 
 
 @get_torch_jit_decorator()
@@ -701,48 +503,3 @@ def jit_blend_mean(mean_action, new_mean, step_size_mean: float):
     mean_update = (1.0 - step_size_mean) * mean_action + step_size_mean * new_mean
     return mean_update
 
-
-@get_torch_jit_decorator()
-def jit_mean_cov_diag_a(
-    costs,
-    actions,
-    gamma_seq,
-    mean_action,
-    cov_action,
-    step_size_mean: float,
-    step_size_cov: float,
-    kappa: float,
-    beta: float,
-):
-    w = jit_calculate_exp_util_from_costs(costs, gamma_seq, beta)
-    w = w.unsqueeze(-1).unsqueeze(-1)
-    new_mean = torch.sum(w * actions, dim=-3)
-    new_mean = jit_blend_mean(mean_action, new_mean, step_size_mean)
-    cov_update = jit_diag_a_cov_update(w, actions, mean_action)
-    new_cov = jit_blend_cov(cov_action, cov_update, step_size_cov, kappa)
-    new_tril = torch.sqrt(new_cov)
-    return new_mean, new_cov, new_tril
-
-@get_torch_jit_decorator()
-def jit_mean_cov_diag_a_value(
-    costs,
-    value_costs,
-    actions,
-    gamma_seq,
-    mean_action,
-    cov_action,
-    step_size_mean: float,
-    step_size_cov: float,
-    kappa: float,
-    beta: float,
-    lambda_: float,
-    value_coef: float,
-):
-    w = jit_calculate_exp_util_from_value_costs(costs, value_costs, gamma_seq, beta, lambda_, value_coef)
-    w = w.unsqueeze(-1).unsqueeze(-1)
-    new_mean = torch.sum(w * actions, dim=-3)
-    new_mean = jit_blend_mean(mean_action, new_mean, step_size_mean)
-    cov_update = jit_diag_a_cov_update(w, actions, mean_action)
-    new_cov = jit_blend_cov(cov_action, cov_update, step_size_cov, kappa)
-    new_tril = torch.sqrt(new_cov)
-    return new_mean, new_cov, new_tril

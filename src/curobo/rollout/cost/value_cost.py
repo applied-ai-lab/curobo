@@ -194,10 +194,14 @@ class ValueCost(CostBase, ValueCostConfig):
             # value = self.value_func(batch, action)
             # value = self.value_func(batch)
             value = value.reshape(value.shape[0], B, T, 1)
-            value = value.mean(dim=0).unsqueeze(0) + 5*value.var(dim=0).unsqueeze(0)
+            # value = value.mean(dim=0).unsqueeze(0) + 5*value.var(dim=0).unsqueeze(0)
             # value = value.max(dim=0).values.unsqueeze(0)
             # print(value[0][0])
             # value = value.unsqueeze(-1)
+            
+            value *= -1
+            value += 1.
+            value = torch.clamp(value, min=0.)
 
         if value.shape[1] > 1: 
             cost = value[:, :, :T]

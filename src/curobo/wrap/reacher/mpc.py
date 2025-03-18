@@ -51,6 +51,7 @@ from curobo.opt.newton.lbfgs import LBFGSOpt, LBFGSOptConfig
 from curobo.geom.sphere_fit import SphereFitType
 from curobo.opt.particle.parallel_es import ParallelES, ParallelESConfig
 from curobo.opt.particle.parallel_mppi import ParallelMPPI, ParallelMPPIConfig
+from curobo.opt.particle.parallel_dial import ParallelDIAL, ParallelDIALConfig
 from curobo.rollout.arm_reacher import ArmReacher, ArmReacherConfig
 from curobo.rollout.cost.pose_cost import PoseCostMetric
 from curobo.rollout.dynamics_model.kinematic_model import KinematicModelState
@@ -119,6 +120,7 @@ class MpcSolverConfig:
         step_dt: Optional[float] = None,
         use_lbfgs: bool = False,
         use_mppi: bool = True,
+        use_dial: bool = False,
         particle_file: str = "particle_mpc.yml",
         override_particle_file: str = None,
         project_pose_to_goal_frame: bool = True,
@@ -313,6 +315,13 @@ class MpcSolverConfig:
             )
             lbfgs = LBFGSOpt(LBFGSOptConfig(**lbfgs_cfg_dict))
             solvers.append(lbfgs)
+
+        if use_dial:
+            assert not use_mppi, "Cannot use both MPPI and DIAL"
+            log_warn("DIAL solver for MPC is highly experimental, not safe to run on real robots")
+            dial_cfg = ParallelDIALConfig(**config_dict)
+            dial = ParallelDIAL(dial_cfg)
+            solvers.append(dial)
 
         mpc_cfg = WrapConfig(
             safety_rollout=arm_rollout_safety,

@@ -173,7 +173,6 @@ class ParticleOptBase(Optimizer, ParticleOptConfig):
         state : dict or np.ndarray
             Initial state to set the simulation problem to
         """
-
         act_seq = self.sample_actions(init_act)
         trajectories = self.rollout_fn(act_seq)
         return trajectories

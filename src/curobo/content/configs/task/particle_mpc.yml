@@ -81,7 +81,7 @@ mppi:
   step_size_cov     : 0.01
   beta              : 0.1
   alpha             : 1
-  num_particles     : 400 #10000
+  num_particles     : 2048 #10000
   update_cov        : True
   cov_type          : "DIAG_A" #
   kappa             : 0.0001
@@ -98,7 +98,7 @@ mppi:
   sync_cuda_time    : True
   use_coo_sparse    : True
   sample_params:
-    fixed_samples: True
+    fixed_samples: False
     sample_ratio: {'halton':0.3, 'halton-knot':0.7, 'random':0.0, 'random-knot':0.0}
     seed: 0
     filter_coeffs: [0.3, 0.3, 0.4]

@@ -57,6 +57,10 @@ def demo_full_config_mpc():
         world_file,
         store_rollouts=True,
         step_dt=0.03,
+        use_mppi=False,
+        use_dial=True,
+        use_cuda_graph=False
+
     )
     mpc = MpcSolver(mpc_config)
 
