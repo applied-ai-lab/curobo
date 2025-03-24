@@ -112,7 +112,15 @@ class ValueCost(CostBase, ValueCostConfig):
         # left_ee_quat = observation.left_ee_quat.reshape(-1, observation.stack_states, 4)
         left_gripper_qpos = observation.left_gripper_qpos.reshape(-1, observation.stack_states, 2)
         
-        gripper_qpos = left_gripper_qpos.repeat(B*T, 1, 1).reshape(B, T, -1)
+        left_gripper_qpos = left_gripper_qpos.repeat(B*T, 1, 1).reshape(B, T, -1)
+
+        gripper_qpos = state_batch.position[:, :, 7:]
+        gripper_qpos = torch.clamp(gripper_qpos, 0, 0.04)
+        gripper_qpos = torch.cat([
+            gripper_qpos,
+            -1*gripper_qpos
+        ], dim=-1)
+        
 
         # left_ee_pos = torch.cat([
         #     left_ee_pos.repeat(B, 1, 1).flip(1),
@@ -162,7 +170,7 @@ class ValueCost(CostBase, ValueCostConfig):
             dict(
                 left_ee_pos=ee_pos_batch.reshape(B*T, -1),
                 left_ee_rot=ee_rot_batch.reshape(B*T, -1),
-                left_gripper_qpos=gripper_qpos.reshape(B*T, -1),
+                left_gripper_qpos=left_gripper_qpos.reshape(B*T, -1),
                 # left_gripper_qpos=observation.left_gripper_qpos.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1),
                 object_pos=observation.object_pos.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_pos is not None else None,
                 object_rot=observation.object_rot.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1) if observation.object_rot is not None else None,
