@@ -185,7 +185,7 @@ class ValueCost(CostBase, ValueCostConfig):
             states=states,
             batch_size=torch.tensor([B*T])
         )
-        batch = batch.reshape(B, T)
+        # batch = batch.reshape(B, T)
         # action = action.reshape(B, T, -1)
 
         with torch.no_grad():
@@ -195,8 +195,8 @@ class ValueCost(CostBase, ValueCostConfig):
                 gripper_qpos,
             ], dim=-1)
             # value = self.value_func(batch, action)   
-            value = self.value_func(batch[:, 0], prop)
-            # value = self.value_func(batch)
+            # value = self.value_func(batch[:, 0], prop)
+            value = self.value_func(batch)
             # print(f'mean: {value[:, 0, 0].mean()}, var: {value[:, 0, 0].var()}')
             # value = value.unsqueeze(2).repeat(1, 1, T, 1)
             # value = self.value_func(batch, action)
