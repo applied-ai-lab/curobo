@@ -61,104 +61,28 @@ class ValueCost(CostBase, ValueCostConfig):
             return torch.zeros(B, T, 1, device=ee_pos_batch.device)
 
         pos_error, axis_angle_error = compute_pose_error(
-            ee_pos_batch[:, :-1].reshape(-1, 3),
-            ee_quat_batch[:, :-1].reshape(-1, 4),
-            ee_pos_batch[:, 1:].reshape(-1, 3),
-            ee_quat_batch[:, 1:].reshape(-1, 4),
+            observation.left_ee_pos.repeat(B*T, 1),
+            self.rotation_transformer.inverse(observation.left_ee_rot).repeat(B*T, 1),
+            ee_pos_batch.reshape(-1, 3),
+            ee_quat_batch.reshape(-1, 4),
         )
-        pos_error = pos_error.reshape(B, T-1, -1)
+        pos_error = pos_error.reshape(B, T, -1)
         
         
-        action_norm = torch.norm(pos_error.reshape(B*(T-1), -1), dim=-1).cpu().numpy()
-        # Plot the histogram
-        plt.figure(figsize=(8, 6))
-        plt.hist(action_norm, bins=20, edgecolor='black', alpha=0.7)
-        plt.title("Distribution of Delta Action Norms")
-        plt.xlabel("Delta Action Norm")
-        plt.ylabel("Frequency")
-        plt.grid(True)
-        plt.savefig('./plot_action_norm_mpc.png')
-        # import pdb
-        # pdb.set_trace()
-        
-        axis_angle_error = axis_angle_error.reshape(B, T-1, -1)
-        action = torch.cat([pos_error, axis_angle_error], dim=-1)
-        action[:, :, :3] /= 0.05
-        action[:, :, 3:6] /= 0.5     
+        axis_angle_error = axis_angle_error.reshape(B, T, -1)
 
-
-        # gripper_qpos = state_batch.position[:, :, 7:]
-        # gripper_qpos = 0.04 * torch.ones_like(state_batch.position[:, :, -1:])
-        # gripper_qpos = torch.clamp(gripper_qpos, 0, 0.04)
-        # gripper_qpos = torch.cat([
-        #     gripper_qpos,
-        #     -1*gripper_qpos
-        # ], dim=-1)
-        
-        
-        # gripper_action = torch.where((gripper_qpos[:,1:, 0] - gripper_qpos[:, :-1, 0]) > 0, -1., 1.)
-        # gripper_action[:] = -1.
-
-        
-        # action = torch.clamp(torch.cat([action, gripper_action.unsqueeze(-1)], dim=-1), -1., 1.)
-        # dummy_action = torch.zeros(B, 1, action.shape[-1], device=action.device)
-        # # dummy_action[:, :, -1] = gripper_action[:, -1].unsqueeze(-1)
-        # dummy_action[:, :, -1] = -1.
-        
-        # action = torch.cat([action, dummy_action], dim=1)
-        
-        
-        # left_ee_pos = observation.left_ee_pos.reshape(-1, observation.stack_states, 3)
-        # left_ee_quat = observation.left_ee_quat.reshape(-1, observation.stack_states, 4)
         left_gripper_qpos = observation.left_gripper_qpos.reshape(-1, observation.stack_states, 2)
-        
         left_gripper_qpos = left_gripper_qpos.repeat(B*T, 1, 1).reshape(B, T, -1)
 
-        gripper_qpos = state_batch.position[:, :, 7:]
-        gripper_qpos = torch.clamp(gripper_qpos, 0, 0.04)
-        gripper_qpos = torch.cat([
-            gripper_qpos,
-            -1*gripper_qpos
-        ], dim=-1)
+        #gripper_qpos = state_batch.position[:, :, 7:]
+        #gripper_qpos = torch.clamp(gripper_qpos, 0, 0.04)
+        #gripper_qpos = torch.cat([
+        #    gripper_qpos,
+        #    -1*gripper_qpos
+        #], dim=-1)
         
-
-        # left_ee_pos = torch.cat([
-        #     left_ee_pos.repeat(B, 1, 1).flip(1),
-        #     ee_pos_batch,
-        # ], dim=1)
-
-        # left_ee_pos = torch.cat([
-        #     left_ee_pos[:, 3:],
-        #     left_ee_pos[:, 2:-1],
-        #     left_ee_pos[:, 1:-2],
-        # ], dim=-1) 
-
-        # left_ee_quat = torch.cat([
-        #     left_ee_quat.repeat(B, 1, 1).flip(1),
-        #     ee_quat_batch,
-        # ], dim=1)
-
-        # left_ee_quat = torch.cat([
-        #     left_ee_quat[:, 3:],
-        #     left_ee_quat[:, 2:-1],
-        #     left_ee_quat[:, 1:-2],
-        # ], dim=-1)
-
-        # left_ee_pos = ee_pos_batch
-        # left_ee_quat = ee_quat_batch
-
         ee_rot_batch = self.rotation_transformer.forward(ee_quat_batch)
 
-        # gripper_qpos = torch.cat([
-        #     left_gripper_qpos.repeat(B, 1, 1).flip(1),
-        #     gripper_qpos,
-        # ], dim=1)
-
-        # gripper_qpos = torch.cat([
-        #     gripper_qpos[:, 3:],
-        #     gripper_qpos[:, 2:-1],
-        #     gripper_qpos[:, 1:-2],
-        # ], dim=-1)
         
 
         object_to_left_ee_pos = ee_pos_batch - observation.object_pos.unsqueeze(1).repeat(B, T, 1)
@@ -185,27 +109,10 @@ class ValueCost(CostBase, ValueCostConfig):
             states=states,
             batch_size=torch.tensor([B*T])
         )
-        # batch = batch.reshape(B, T)
-        # action = action.reshape(B, T, -1)
 
         with torch.no_grad():
-            prop = torch.cat([
-                ee_pos_batch,
-                ee_rot_batch,
-                gripper_qpos,
-            ], dim=-1)
-            # value = self.value_func(batch, action)   
-            # value = self.value_func(batch[:, 0], prop)
             value = self.value_func(batch)
-            # print(f'mean: {value[:, 0, 0].mean()}, var: {value[:, 0, 0].var()}')
-            # value = value.unsqueeze(2).repeat(1, 1, T, 1)
-            # value = self.value_func(batch, action)
-            # value = self.value_func(batch)
             value = value.reshape(value.shape[0], B, T, 1)
-            # value = value.mean(dim=0).unsqueeze(0) + 5*value.var(dim=0).unsqueeze(0)
-            # value = value.max(dim=0).values.unsqueeze(0)
-            # print(value[0][0])
-            # value = value.unsqueeze(-1)
             
             value *= -1
             value += 1.
