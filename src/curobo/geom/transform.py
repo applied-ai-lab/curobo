@@ -17,6 +17,7 @@ from typing import Optional, Tuple, Literal
 
 # Third Party
 import torch
+import torch.nn.functional as F
 import warp as wp
 
 # CuRobo
@@ -1475,6 +1476,33 @@ def axis_angle_from_quat(quat: torch.Tensor, eps: float = 1.0e-6) -> torch.Tenso
     )
     return quat[..., 1:4] / sin_half_angles_over_angles.unsqueeze(-1)
 
+def normalize(x: torch.Tensor, eps: float = 1e-9) -> torch.Tensor:
+    """Normalizes a given input tensor to unit length.
+
+    Args:
+        x: Input tensor of shape (N, dims).
+        eps: A small value to avoid division by zero. Defaults to 1e-9.
+
+    Returns:
+        Normalized tensor of shape (N, dims).
+    """
+    return x / x.norm(p=2, dim=-1).clamp(min=eps, max=None).unsqueeze(-1)
+
+def quat_from_angle_axis(angle: torch.Tensor, axis: torch.Tensor) -> torch.Tensor:
+    """Convert rotations given as angle-axis to quaternions.
+
+    Args:
+        angle: The angle turned anti-clockwise in radians around the vector's direction. Shape is (N,).
+        axis: The axis of rotation. Shape is (N, 3).
+
+    Returns:
+        The quaternion in (w, x, y, z). Shape is (N, 4).
+    """
+    theta = (angle / 2).unsqueeze(-1)
+    xyz = normalize(axis) * theta.sin()
+    w = theta.cos()
+    return normalize(torch.cat([w, xyz], dim=-1))
+
 
 def compute_pose_error(
     t01: torch.Tensor,
@@ -1526,3 +1554,93 @@ def compute_pose_error(
         return pos_error, axis_angle_error
     else:
         raise ValueError(f"Unsupported orientation error type: {rot_error_type}. Valid: 'quat', 'axis_angle'.")
+
+
+def apply_delta_pose(
+    source_pos: torch.Tensor,
+    source_rot: torch.Tensor,
+    delta_pose: torch.Tensor,
+    eps: float = 1.0e-6,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Applies delta pose transformation on source pose.
+
+    The first three elements of `delta_pose` are interpreted as cartesian position displacement.
+    The remaining three elements of `delta_pose` are interpreted as orientation displacement
+    in the angle-axis format.
+
+    Args:
+        source_pos: Position of source frame. Shape is (N, 3).
+        source_rot: Quaternion orientation of source frame in (w, x, y, z). Shape is (N, 4)..
+        delta_pose: Position and orientation displacements. Shape is (N, 6).
+        eps: The tolerance to consider orientation displacement as zero.
+
+    Returns:
+        A tuple containing the displaced position and orientation frames.
+        Shape of the tensors are (N, 3) and (N, 4) respectively.
+    """
+    # number of poses given
+    num_poses = source_pos.shape[0]
+    device = source_pos.device
+
+    # interpret delta_pose[:, 0:3] as target position displacements
+    target_pos = source_pos + delta_pose[:, 0:3]
+    # interpret delta_pose[:, 3:6] as target rotation displacements
+    rot_actions = delta_pose[:, 3:6]
+    angle = torch.linalg.vector_norm(rot_actions, dim=1)
+    axis = rot_actions / angle.unsqueeze(-1)
+    # change from axis-angle to quat convention
+    identity_quat = torch.tensor([1.0, 0.0, 0.0, 0.0], device=device).repeat(
+        num_poses, 1
+    )
+    rot_delta_quat = torch.where(
+        angle.unsqueeze(-1).repeat(1, 4) > eps,
+        quat_from_angle_axis(angle, axis),
+        identity_quat,
+    )
+    # TODO: Check if this is the correct order for this multiplication.
+    target_rot = quat_mul(rot_delta_quat, source_rot)
+
+    return target_pos, target_rot
+
+
+def rotation_6d_to_matrix(d6: torch.Tensor) -> torch.Tensor:
+    """
+    Converts 6D rotation representation by Zhou et al. [1] to rotation matrix
+    using Gram--Schmidt orthogonalization per Section B of [1].
+    Args:
+        d6: 6D rotation representation, of size (*, 6)
+
+    Returns:
+        batch of rotation matrices of size (*, 3, 3)
+
+    [1] Zhou, Y., Barnes, C., Lu, J., Yang, J., & Li, H.
+    On the Continuity of Rotation Representations in Neural Networks.
+    IEEE Conference on Computer Vision and Pattern Recognition, 2019.
+    Retrieved from http://arxiv.org/abs/1812.07035
+    """
+
+    a1, a2 = d6[..., :3], d6[..., 3:]
+    b1 = F.normalize(a1, dim=-1)
+    b2 = a2 - (b1 * a2).sum(-1, keepdim=True) * b1
+    b2 = F.normalize(b2, dim=-1)
+    b3 = torch.cross(b1, b2, dim=-1)
+    return torch.stack((b1, b2, b3), dim=-2)
+
+def matrix_to_rotation_6d(matrix: torch.Tensor) -> torch.Tensor:
+    """
+    Converts rotation matrices to 6D rotation representation by Zhou et al. [1]
+    by dropping the last row. Note that 6D representation is not unique.
+    Args:
+        matrix: batch of rotation matrices of size (*, 3, 3)
+
+    Returns:
+        6D rotation representation, of size (*, 6)
+
+    [1] Zhou, Y., Barnes, C., Lu, J., Yang, J., & Li, H.
+    On the Continuity of Rotation Representations in Neural Networks.
+    IEEE Conference on Computer Vision and Pattern Recognition, 2019.
+    Retrieved from http://arxiv.org/abs/1812.07035
+    """
+    batch_dim = matrix.size()[:-2]
+    return matrix[..., :2, :].clone().reshape(batch_dim + (6,))
+

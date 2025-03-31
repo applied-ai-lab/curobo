@@ -286,6 +286,16 @@ class Pose(Sequence):
     def get_matrix(self, out_matrix: Optional[torch.Tensor] = None):
         full_mat = pose_to_matrix(self.position, self.quaternion, out_matrix)
         return full_mat
+    
+    def get_6d_rep(self):
+        """Returns the 6d representation of the pose
+
+        Returns:
+            torch.Tensor: 6d representation of the pose
+        """
+        matrix = self.get_matrix()
+        batch_dim = matrix.shape[:-2]
+        return matrix[..., :2, :3].reshape(batch_dim + (6,))
 
     def get_numpy_matrix(self):
         return self.get_matrix().cpu().numpy()
