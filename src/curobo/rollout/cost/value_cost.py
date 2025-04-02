@@ -48,6 +48,7 @@ class ValueCost(CostBase, ValueCostConfig):
         self.identity_quat = torch.tensor([1.0, 0.0, 0.0, 0.0], device='cuda:0')
 
         # self.rotation_transformer = RotationTransformer(from_rep="quaternion", to_rep="rotation_6d")
+        self.gripper_penalty = 0.5
 
         self.value_func = None
 
@@ -75,6 +76,11 @@ class ValueCost(CostBase, ValueCostConfig):
         
         axis_angle_error = axis_angle_error.reshape(B, T, -1)
 
+        # left_gripper_qpos = state_batch.position[:, :, -1:]
+        # left_gripper_qpos = torch.clamp(left_gripper_qpos, min=0.0, max=0.04)
+        # left_gripper_qpos = torch.cat([left_gripper_qpos, -left_gripper_qpos], dim=-1)
+
+        # left_gripper_velocity = state_batch.velocity[:, :, -1:]
         left_gripper_qpos = observation.left_gripper_qpos.reshape(-1, observation.stack_states, 2)
         left_gripper_qpos = left_gripper_qpos.repeat(B*T, 1, 1).reshape(B, T, -1)
 
@@ -95,8 +101,12 @@ class ValueCost(CostBase, ValueCostConfig):
         grasped_object_quat = grasped_object_quat.reshape(B, T, -1)
         grasped_object_rot = matrix_to_rotation_6d(quaternion_to_matrix(grasped_object_quat.reshape(-1, 4))).reshape(B, T, -1)
 
+        # grasped = torch.logical_and(left_gripper_velocity < 0, observation.grasped.expand(left_gripper_velocity.shape))
+
         object_pos = torch.where(observation.grasped.unsqueeze(1).repeat(1, T, 1).bool(), grasped_object_pos, object_pos)
         object_rot = torch.where(observation.grasped.unsqueeze(1).repeat(1, T, 1).bool(), grasped_object_rot, object_rot)
+        # object_pos = torch.where(grasped.bool(), grasped_object_pos, object_pos)
+        # object_rot = torch.where(grasped.bool(), grasped_object_rot, object_rot)
 
         object_to_left_ee_pos = ee_pos_batch - object_pos
         # object_to_left_ee_pos = observation.object_to_left_ee_pos.unsqueeze(1).repeat(B, T, 1)
@@ -123,6 +133,9 @@ class ValueCost(CostBase, ValueCostConfig):
             batch_size=torch.tensor([B*T])
         )
 
+        # penalty = torch.logical_and(left_gripper_velocity > 0, observation.grasped.expand(left_gripper_velocity.shape)) * self.gripper_penalty
+        # close_penalty = torch.logical_and(left_gripper_velocity < 0, 1 - observation.grasped.expand(left_gripper_velocity.shape)) * 0.01
+
         with torch.no_grad():
             value = self.value_func(batch)
             value = value.reshape(value.shape[0], B, T, 1)
@@ -131,6 +144,9 @@ class ValueCost(CostBase, ValueCostConfig):
             value *= -1
             value += 2.
             value = torch.clamp(value, min=0.)
+
+            # value += penalty.unsqueeze(0).repeat(value.shape[0], 1, 1, 1)
+            # value += close_penalty.unsqueeze(0).repeat(value.shape[0], 1, 1, 1)
 
         if value.shape[1] > 1:  
             cost = value[:, :, :T]
