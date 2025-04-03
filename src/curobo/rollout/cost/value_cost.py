@@ -141,9 +141,10 @@ class ValueCost(CostBase, ValueCostConfig):
             value = value.reshape(value.shape[0], B, T, 1)
             # print(f'value: {value.mean()}')
             
-            value *= -1
-            value += 2.
-            value = torch.clamp(value, min=0.)
+            # value *= -1
+            # value += 2.
+            # value = torch.clamp(value, min=0.)
+            # value = value.mean(dim=0)[None]
 
             # value += penalty.unsqueeze(0).repeat(value.shape[0], 1, 1, 1)
             # value += close_penalty.unsqueeze(0).repeat(value.shape[0], 1, 1, 1)
