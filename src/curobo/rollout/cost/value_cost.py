@@ -54,7 +54,7 @@ class ValueCost(CostBase, ValueCostConfig):
 
     def set_value_fn(self, value_fn):
         self.value_func = value_fn
-        self.value_func.eval()
+        # self.value_func.eval()
 
 
     def forward(self, state_batch, ee_pos_batch, ee_quat_batch, observation: Observation, goal: Goal):
@@ -138,6 +138,8 @@ class ValueCost(CostBase, ValueCostConfig):
 
         with torch.no_grad():
             value = self.value_func(batch)
+            gripepr_action = ((observation.gripper_action + 1) / 2.).long()
+            value = value[:, :, gripepr_action]
             value = value.reshape(value.shape[0], B, T, 1)
             # print(f'value: {value.mean()}')
             

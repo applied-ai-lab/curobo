@@ -438,6 +438,7 @@ class Observation:
     features: Optional[torch.Tensor] = None
     images: Optional[torch.Tensor] = None
     grasped: Optional[torch.Tensor] = None
+    gripper_action: Optional[torch.Tensor] = None
     stack_states: int = 1
     batch: int = -1  # NOTE: add another variable for size of index tensors?
 
@@ -457,6 +458,7 @@ class Observation:
             features=self.features,
             images=self.images,
             grasped=self.grasped,
+            gripper_action=self.gripper_action,
             stack_states=self.stack_states,
         )
 
@@ -481,6 +483,8 @@ class Observation:
             self.images = self.images.to(tensor_args)
         if self.grasped is not None:
             self.grasped = self.grasped.to(tensor_args)
+        if self.gripper_action is not None:
+            self.gripper_action = self.gripper_action.to(tensor_args)
         return self
 
     def copy_(self, observation: Observation, update_idx_buffers: bool = True):
@@ -510,6 +514,9 @@ class Observation:
         self.features = self._copy_buffer(self.features, observation.features)
         self.images = self._copy_buffer(self.images, observation.images)
         self.grasped = self._copy_buffer(self.grasped, observation.grasped)
+        self.gripper_action = self._copy_buffer(
+            self.gripper_action, observation.gripper_action
+        )
         self.stack_states = observation.stack_states
         self.batch = observation.batch
         
