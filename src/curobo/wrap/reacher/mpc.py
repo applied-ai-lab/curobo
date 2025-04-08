@@ -572,6 +572,10 @@ class MpcSolver(MpcSolverConfig):
     def set_value_fn(self, value_fn):
         self.rollout_fn.value_cost.set_value_fn(value_fn)
         self.solver.set_value_fn(value_fn)
+        
+    def set_policy_fn(self, policy_fn):
+        self.rollout_fn.value_cost.set_policy_fn(policy_fn)       
+        self.solver.set_policy_fn(policy_fn)
 
     def update_goal(self, goal: Goal):
         """Update the goal for MPC.

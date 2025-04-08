@@ -110,7 +110,12 @@ class WrapBase(WrapConfig):
         self.safety_rollout.value_cost.set_value_fn(value_fn)
         for opt in self.optimizers:
             opt.set_value_fn(value_fn)
-
+            
+    def set_policy_fn(self, policy_fn):
+        self.safety_rollout.value_cost.set_policy_fn(policy_fn)
+        for opt in self.optimizers:
+            opt.set_policy_fn(policy_fn)            
+            
     def update_params(self, goal: Goal):
         with profiler.record_function("wrap_base/safety/update_params"):
             log_info("Updating safety params")

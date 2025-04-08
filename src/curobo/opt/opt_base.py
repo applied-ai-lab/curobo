@@ -184,6 +184,9 @@ class Optimizer(OptimizerConfig):
 
     def set_value_fn(self, value_fn):
         self.rollout_fn.value_cost.set_value_fn(value_fn)
+        
+    def set_policy_fn(self, policy_fn):
+        self.rollout_fn.value_cost.set_policy_fn(policy_fn)        
 
     def update_params(self, goal: Goal):
         """Update parameters in the :meth:`curobo.rollout.rollout_base.RolloutBase` instance.

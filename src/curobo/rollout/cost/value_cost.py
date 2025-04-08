@@ -51,10 +51,15 @@ class ValueCost(CostBase, ValueCostConfig):
         self.gripper_penalty = 0.5
 
         self.value_func = None
+        self.policy_func = None
 
     def set_value_fn(self, value_fn):
         self.value_func = value_fn
         # self.value_func.eval()
+        
+    def set_policy_fn(self, policy_fn):
+        self.policy_func = policy_fn
+        # self.policy_func.eval()
 
 
     def forward(self, state_batch, ee_pos_batch, ee_quat_batch, observation: Observation, goal: Goal):
@@ -137,9 +142,10 @@ class ValueCost(CostBase, ValueCostConfig):
         # close_penalty = torch.logical_and(left_gripper_velocity < 0, 1 - observation.grasped.expand(left_gripper_velocity.shape)) * 0.01
 
         with torch.no_grad():
-            value = self.value_func(batch)
-            gripepr_action = ((observation.gripper_action + 1) / 2.).long()
-            value = value[:, :, gripepr_action]
+            gripper_action = self.policy_func(batch, std=0.2).sample()
+            value = self.value_func(batch, gripper_action)
+            # gripepr_action = ((observation.gripper_action + 1) / 2.).long()
+            # value = value[:, :, gripepr_action]
             value = value.reshape(value.shape[0], B, T, 1)
             # print(f'value: {value.mean()}')
             
