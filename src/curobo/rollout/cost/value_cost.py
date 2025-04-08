@@ -138,8 +138,9 @@ class ValueCost(CostBase, ValueCostConfig):
 
         with torch.no_grad():
             value = self.value_func(batch)
-            gripepr_action = ((observation.gripper_action + 1) / 2.).long()
-            value = value[:, :, gripepr_action]
+            # gripepr_action = ((observation.gripper_action + 1) / 2.).long()
+            # value = value[:, :, gripepr_action]
+            value = value.max(dim=-1).values
             value = value.reshape(value.shape[0], B, T, 1)
             # print(f'value: {value.mean()}')
             
