@@ -148,6 +148,8 @@ class ValueCost(CostBase, ValueCostConfig):
             value += 2.
             value = torch.clamp(value, min=0.)
 
+            # value = value.mean(dim=0) + value.std(dim=0) * 0.5
+            # value = value.unsqueeze(0)
             # value += penalty.unsqueeze(0).repeat(value.shape[0], 1, 1, 1)
             # value += close_penalty.unsqueeze(0).repeat(value.shape[0], 1, 1, 1)
 
