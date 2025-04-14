@@ -71,9 +71,9 @@ cost:
     run_weight: 1.0
 
 
-  stop_cfg:
-    weight: 100.0 #50.0
-    max_nlimit: 0.25 #0.2
+  # stop_cfg:
+  #   weight: 100.0 #50.0
+  #   max_nlimit: 0.25 #0.2
 
 
 
