@@ -137,24 +137,25 @@ class ValueCost(CostBase, ValueCostConfig):
         # close_penalty = torch.logical_and(left_gripper_velocity < 0, 1 - observation.grasped.expand(left_gripper_velocity.shape)) * 0.01
 
         with torch.no_grad():
-            # gripepr_action = observation.gripper_action.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1).float()
-            # value = self.value_func(batch, gripepr_action)
-            value = self.value_func(batch)
-            # gripepr_action = ((observation.gripper_action + 1) / 2.).long()
-            # value = value[:, :, gripepr_action]
-            # value = value.mean(dim=0).unsqueeze(0)
-            value = value.max(dim=-1).values
-            value = value.reshape(value.shape[0], B, T, 1)
-            # print(f'value: {value.mean()}')
+            value = self.value_func.predict_cost(batch, B, T)
+            # # gripepr_action = observation.gripper_action.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1).float()
+            # # value = self.value_func(batch, gripepr_action)
+            # value = self.value_func(batch)
+            # # gripepr_action = ((observation.gripper_action + 1) / 2.).long()
+            # # value = value[:, :, gripepr_action]
+            # # value = value.mean(dim=0).unsqueeze(0)
+            # value = value.max(dim=-1).values
+            # value = value.reshape(value.shape[0], B, T, 1)
+            # # print(f'value: {value.mean()}')
             
-            value *= -1
-            value += 2.
-            value = torch.clamp(value, min=0.)
+            # value *= -1
+            # value += 2.
+            # value = torch.clamp(value, min=0.)
 
-            # value = value.mean(dim=0) + value.std(dim=0) * 0.5
-            # value = value.unsqueeze(0)
-            # value += penalty.unsqueeze(0).repeat(value.shape[0], 1, 1, 1)
-            # value += close_penalty.unsqueeze(0).repeat(value.shape[0], 1, 1, 1)
+            # # value = value.mean(dim=0) + value.std(dim=0) * 0.5
+            # # value = value.unsqueeze(0)
+            # # value += penalty.unsqueeze(0).repeat(value.shape[0], 1, 1, 1)
+            # # value += close_penalty.unsqueeze(0).repeat(value.shape[0], 1, 1, 1)
 
         if value.shape[1] > 1:  
             cost = value[:, :, :T]
