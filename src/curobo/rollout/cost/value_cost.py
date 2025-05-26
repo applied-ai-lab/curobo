@@ -26,7 +26,7 @@ from tensordict import TensorDict
 # CuRobo
 from curobo.rollout.rollout_base import Goal, Observation
 from curobo.geom.transform import quaternion_to_matrix, axis_angle_from_quat, compute_pose_error, apply_delta_pose, \
-    rotation_6d_to_matrix, matrix_to_quaternion, matrix_to_rotation_6d, quat_mul, quat_from_angle_axis
+    rotation_6d_to_matrix, matrix_to_quaternion, matrix_to_rotation_6d, quat_mul, quat_from_angle_axis, quaternion_to_matrix, pose_to_matrix
 from curobo.util.rotation_transformer import RotationTransformer
 # Local Folder
 from .cost_base import CostBase, CostConfig
@@ -56,6 +56,8 @@ class ValueCost(CostBase, ValueCostConfig):
         self.value_func = value_fn
         # self.value_func.eval()
 
+    def set_policy_fn(self, policy_fn):
+        self.policy_func = policy_fn
 
     def forward(self, state_batch, ee_pos_batch, ee_quat_batch, observation: Observation, goal: Goal):
         B, T, _ = ee_pos_batch.shape
@@ -105,13 +107,37 @@ class ValueCost(CostBase, ValueCostConfig):
 
         object_pos = torch.where(observation.grasped.unsqueeze(1).repeat(1, T, 1).bool(), grasped_object_pos, object_pos)
         object_rot = torch.where(observation.grasped.unsqueeze(1).repeat(1, T, 1).bool(), grasped_object_rot, object_rot)
+        
+        object_quat = matrix_to_quaternion(rotation_6d_to_matrix(object_rot))
+        
+        # object_pose = pose_to_matrix(object_pos.reshape(-1, 3), object_quat.reshape(-1, 4))
+        # ee_pose = pose_to_matrix(ee_pos_batch.reshape(-1, 3), ee_quat_batch.reshape(-1, 4))
+        # object_in_gripper = object_pose @ ee_pose.inverse()
+        # object_to_left_ee_pos = object_in_gripper[:, :3, 3]
+        # object_to_left_ee_mat = object_in_gripper[:, :3, :3]
+        # object_to_left_ee_rot = matrix_to_rotation_6d(object_to_left_ee_mat)
+        
         # object_pos = torch.where(grasped.bool(), grasped_object_pos, object_pos)
         # object_rot = torch.where(grasped.bool(), grasped_object_rot, object_rot)
 
         object_to_left_ee_pos = ee_pos_batch - object_pos
+        
+        
+        
+        # object_to_left_ee_pos, object_to_left_ee_quat = compute_pose_error(
+        #     object_pos.reshape(-1, 3),
+        #     matrix_to_quaternion(rotation_6d_to_matrix(object_rot)).reshape(B*T, -1),
+        #     ee_pos_batch.reshape(-1, 3),
+        #     ee_quat_batch.reshape(-1, 4),
+        #     rot_error_type='quat'
+        # )        
+        # object_to_left_ee_rot = matrix_to_rotation_6d(quaternion_to_matrix(object_to_left_ee_quat))
+        
+        
         # object_to_left_ee_pos = observation.object_to_left_ee_pos.unsqueeze(1).repeat(B, T, 1)
 
         # action = action.reshape(B*T, -1)
+        
         
         states = TensorDict(
             dict(
@@ -122,6 +148,7 @@ class ValueCost(CostBase, ValueCostConfig):
                 object_pos=object_pos.reshape(B*T, -1) if observation.object_pos is not None else None,
                 object_rot=object_rot.reshape(B*T, -1) if observation.object_rot is not None else None,
                 object_to_left_ee_pos=object_to_left_ee_pos.reshape(B*T, -1),
+                # object_to_left_ee_rot=object_to_left_ee_rot,
                 # object_to_left_ee_pos=observation.object_to_left_ee_pos.unsqueeze(1).repeat(B, T, 1) if observation.object_to_left_ee_pos is not None else None,
                 # object_to_left_ee_quat=observation.object_to_left_ee_quat.unsqueeze(1).repeat(B, T, 1) if observation.object_to_left_ee_quat is not None else None,
             ),
@@ -137,7 +164,19 @@ class ValueCost(CostBase, ValueCostConfig):
         # close_penalty = torch.logical_and(left_gripper_velocity < 0, 1 - observation.grasped.expand(left_gripper_velocity.shape)) * 0.01
 
         with torch.no_grad():
-            value = self.value_func.predict_cost(batch, B, T)
+            # self.value_func.gripper_actor.eval()
+            # gripper_action = self.value_func.gripper_actor(batch, std=0.0).mean
+            # gripper_action = self.value_func.gripper_actor(batch)
+            # action, log_prob, action_prob = self.value_func.gripper_actor.get_action(batch)
+            # self.value_func.gripper_actor.train()
+            value = self.value_func.predict_cost(batch, B, T, task=observation.task)
+            
+            # diff = (state_batch.position - observation.reference_joint_pos[:10])**2
+            # diff = diff.sum(dim=-1)
+            # value += 0.1 * diff.unsqueeze(0).unsqueeze(-1)
+            
+            # value = torch.gather(value, dim=2, index=action.unsqueeze(-1).unsqueeze(0).repeat(value.shape[0], 1, 1))
+            # value = (value * action_prob).sum(dim=-1)
             # # gripepr_action = observation.gripper_action.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1).float()
             # # value = self.value_func(batch, gripepr_action)
             # value = self.value_func(batch)
