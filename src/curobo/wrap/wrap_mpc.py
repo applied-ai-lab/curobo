@@ -36,7 +36,7 @@ class WrapMpc(WrapBase):
             self._init_act_seq.copy_(seed)
         return True
 
-    def solve(self, goal: Goal, seed: Optional[State] = None, shift_steps=1):
+    def solve(self, goal: Goal, seed: Optional[State] = None, shift_steps=1, pi_act=None):
         if seed is None and self._init_act_seq is None:
             seed = self.get_init_act()
         elif self._init_act_seq is not None:
@@ -55,7 +55,7 @@ class WrapMpc(WrapBase):
         # print("In: ", seed[0,:,0])
         start_time = time.time()
         with profiler.record_function("mpc/opt"):
-            act_seq = self.optimize(seed, shift_steps=shift_steps)
+            act_seq = self.optimize(seed, shift_steps=shift_steps, pi_act=pi_act)
         if self.sync_cuda_time:
             torch.cuda.synchronize(device=self.tensor_args.device)
         self.opt_dt = time.time() - start_time

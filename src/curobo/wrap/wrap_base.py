@@ -73,9 +73,9 @@ class WrapBase(WrapConfig):
             return self.safety_rollout.get_metrics_cuda_graph(state)
         return self.safety_rollout.get_metrics(state)
 
-    def optimize(self, act_seq: torch.Tensor, shift_steps: int = 0) -> torch.Tensor:
+    def optimize(self, act_seq: torch.Tensor, shift_steps: int = 0, pi_act = None) -> torch.Tensor:
         for opt in self.optimizers:
-            act_seq = opt.optimize(act_seq, shift_steps)
+            act_seq = opt.optimize(act_seq, shift_steps, pi_act=pi_act)
         return act_seq
 
     def get_debug_data(self):

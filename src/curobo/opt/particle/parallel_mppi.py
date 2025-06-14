@@ -69,6 +69,7 @@ class ParallelMPPIConfig(ParticleOptConfig):
     sample_per_problem: bool
     value_lambda: float = 60.
     value_coef: float = 200.
+    pi_act_frac: float = 0.0
 
     def __post_init__(self):
         self.init_cov = self.tensor_args.to_device(self.init_cov).unsqueeze(0)
@@ -353,7 +354,7 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
         self.mean_action.copy_(new_mean)
 
     @torch.no_grad()
-    def sample_actions(self, init_act):
+    def sample_actions(self, init_act, pi_act=None):
         delta = torch.index_select(self._sample_set, 0, self._sample_iter).squeeze(0)
         if not self.sample_params.fixed_samples:
             self._sample_iter[:] += 1
@@ -378,6 +379,10 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
                 .unsqueeze(0)
                 .expand(self.n_problems, -1, -1, -1)
             )
+
+        if self.pi_act_per_problem > 0 and pi_act is not None:
+            # pi_act = pi_act.unsqueeze(0).expand(self.n_problems, -1, -1, -1)
+            cat_list.append(pi_act)
 
         act_seq = torch.cat(
             (cat_list),
@@ -625,7 +630,7 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
             self._sample_iter_n = 0
 
     @torch.no_grad()
-    def generate_rollouts(self, init_act=None):
+    def generate_rollouts(self, init_act=None, pi_act=None):
         """
         Samples a batch of actions, rolls out trajectories for each particle
         and returns the resulting observations, costs,
@@ -637,7 +642,7 @@ class ParallelMPPI(ParticleOptBase, ParallelMPPIConfig):
             Initial state to set the simulation problem to
         """
 
-        return super().generate_rollouts(init_act)
+        return super().generate_rollouts(init_act, pi_act)
 
 @get_torch_jit_decorator()
 def jit_calculate_exp_util_from_value_costs(costs, value_costs, gamma_seq, beta: float, lambda_: float, value_coef: float):

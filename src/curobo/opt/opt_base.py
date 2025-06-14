@@ -91,6 +91,7 @@ class OptimizerConfig:
     #: torch profile runs. Set this to False to use a standard tensor.
     use_coo_sparse: bool
 
+
     def __post_init__(self):
         object.__setattr__(self, "action_highs", self.tensor_args.to_device(self.action_highs))
         object.__setattr__(self, "action_lows", self.tensor_args.to_device(self.action_lows))
@@ -154,7 +155,7 @@ class Optimizer(OptimizerConfig):
         self.debug_var = []
         self.cu_opt_graph = None
 
-    def optimize(self, opt_tensor: torch.Tensor, shift_steps=0, n_iters=None) -> torch.Tensor:
+    def optimize(self, opt_tensor: torch.Tensor, shift_steps=0, n_iters=None, pi_act=None) -> torch.Tensor:
         """Find a solution through optimization given the initial values for variables.
 
         Args:
@@ -170,7 +171,7 @@ class Optimizer(OptimizerConfig):
             n_iters = self.cold_start_n_iters
             self.COLD_START = False
         st_time = time.time()
-        out = self._optimize(opt_tensor, shift_steps, n_iters)
+        out = self._optimize(opt_tensor, shift_steps, n_iters, pi_act=pi_act)
         if self.sync_cuda_time:
             torch.cuda.synchronize(device=self.tensor_args.device)
         self.opt_dt = time.time() - st_time
@@ -254,7 +255,7 @@ class Optimizer(OptimizerConfig):
         return self._rollout_list
 
     @abstractmethod
-    def _optimize(self, opt_tensor: torch.Tensor, shift_steps=0, n_iters=None) -> torch.Tensor:
+    def _optimize(self, opt_tensor: torch.Tensor, shift_steps=0, n_iters=None, pi_act=None) -> torch.Tensor:
         """Implement this function in a derived class containing the solver.
 
         Args:

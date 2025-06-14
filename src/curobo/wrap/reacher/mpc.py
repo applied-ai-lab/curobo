@@ -525,6 +525,7 @@ class MpcSolver(MpcSolverConfig):
         current_state: JointState,
         shift_steps: int = 1,
         seed_traj: Optional[JointState] = None,
+        pi_traj = None,
         max_attempts: int = 1,
     ):
         """Solve for the next action given the current state.
@@ -542,7 +543,7 @@ class MpcSolver(MpcSolverConfig):
         converged = True
 
         for _ in range(max_attempts):
-            result = self._step_once(current_state.clone(), shift_steps, seed_traj)
+            result = self._step_once(current_state.clone(), shift_steps, seed_traj, pi_traj)
             if (
                 torch.count_nonzero(torch.isnan(result.action.position)) == 0
                 and torch.count_nonzero(~result.metrics.feasible) == 0
@@ -774,6 +775,7 @@ class MpcSolver(MpcSolverConfig):
         current_state: JointState,
         shift_steps: int = 1,
         seed_traj: Optional[JointState] = None,
+        pi_traj: Optional[JointState] = None,
     ) -> WrapResult:
         """Solve for the next action given the current state.
 
@@ -795,7 +797,7 @@ class MpcSolver(MpcSolverConfig):
         if self.use_cuda_graph_full_step:
             st_time = time.time()
             if not self._cu_step_init:
-                self._initialize_cuda_graph_step(current_state, shift_steps, seed_traj)
+                self._initialize_cuda_graph_step(current_state, shift_steps, seed_traj, pi_traj)
             self._cu_state_in.copy_(current_state)
             if seed_traj is not None:
                 self._cu_seed.copy_(seed_traj)
@@ -810,6 +812,7 @@ class MpcSolver(MpcSolverConfig):
                 self._step_goal_buffer,
                 shift_steps,
                 seed_traj,
+                pi_traj
             )
 
         return result
@@ -862,6 +865,7 @@ class MpcSolver(MpcSolverConfig):
         goal: Goal,
         shift_steps: int = 1,
         seed_traj: Optional[JointState] = None,
+        pi_traj: Optional[JointState] = None,
     ) -> WrapResult:
         """Solve for the next action given the current state.
 
@@ -883,8 +887,7 @@ class MpcSolver(MpcSolverConfig):
 
         if seed_traj is not None:
             self.solver.update_init_seed(seed_traj)
-
-        result = self.solver.solve(goal_buffer, seed_traj, shift_steps)
+        result = self.solver.solve(goal_buffer, seed_traj, shift_steps, pi_traj)
         result.js_action = self.rollout_fn.get_full_dof_from_solution(result.action)
         return result
 

@@ -162,7 +162,7 @@ class ParticleOptBase(Optimizer, ParticleOptConfig):
         """
         return False
 
-    def generate_rollouts(self, init_act=None):
+    def generate_rollouts(self, init_act=None, pi_act: Optional[T_HDOF_float] = None):
         """
         Samples a batch of actions, rolls out trajectories for each particle
         and returns the resulting observations, costs,
@@ -173,11 +173,11 @@ class ParticleOptBase(Optimizer, ParticleOptConfig):
         state : dict or np.ndarray
             Initial state to set the simulation problem to
         """
-        act_seq = self.sample_actions(init_act)
+        act_seq = self.sample_actions(init_act, pi_act=pi_act)
         trajectories = self.rollout_fn(act_seq)
         return trajectories
 
-    def _optimize(self, init_act: torch.Tensor, shift_steps=0, n_iters=None):
+    def _optimize(self, init_act: torch.Tensor, shift_steps=0, n_iters=None, pi_act: Optional[T_HDOF_float] = None):
         """
         Optimize for best action at current state
 
@@ -210,7 +210,7 @@ class ParticleOptBase(Optimizer, ParticleOptConfig):
             curr_action_seq = self._call_cuda_opt_iters(init_act)
         else:
             curr_action_seq = self._run_opt_iters(
-                init_act, n_iters=n_iters, shift_steps=shift_steps
+                init_act, n_iters=n_iters, shift_steps=shift_steps, pi_act=pi_act
             )
 
         self.num_steps += 1
@@ -247,7 +247,7 @@ class ParticleOptBase(Optimizer, ParticleOptConfig):
         self.cu_opt_graph.replay()
         return self._cu_act_seq.detach().clone()  # .clone()
 
-    def _run_opt_iters(self, init_act: T_HDOF_float, shift_steps=0, n_iters=None):
+    def _run_opt_iters(self, init_act: T_HDOF_float, shift_steps=0, n_iters=None, pi_act: Optional[T_HDOF_float] = None):
         n_iters = n_iters if n_iters is not None else self.n_iters
 
         self._shift(shift_steps)
@@ -257,7 +257,7 @@ class ParticleOptBase(Optimizer, ParticleOptConfig):
 
         for _ in range(n_iters):
             # generate random simulated trajectories
-            trajectory = self.generate_rollouts()
+            trajectory = self.generate_rollouts(pi_act=pi_act)
             trajectory.actions = trajectory.actions.view(
                 self.n_problems, self.particles_per_problem, self.action_horizon, self.d_action
             )
@@ -294,8 +294,12 @@ class ParticleOptBase(Optimizer, ParticleOptConfig):
             round(int(self.null_act_frac * num_particles_per_problem)) - self.null_per_problem
         )
 
+        self.pi_act_per_problem = (
+            round(int(self.pi_act_frac * num_particles_per_problem) * 0.5)
+        )
+
         self.sampled_particles_per_problem = (
-            num_particles_per_problem - self.null_per_problem - self.neg_per_problem
+            num_particles_per_problem - self.null_per_problem - self.neg_per_problem - self.pi_act_per_problem
         )
         self.particles_per_problem = num_particles_per_problem
         if self.null_per_problem > 0:
