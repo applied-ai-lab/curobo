@@ -159,7 +159,7 @@ class ValueCost(CostBase, ValueCostConfig):
             # gripper_action = self.value_func.gripper_actor(batch)
             # action, log_prob, action_prob = self.value_func.gripper_actor.get_action(batch)
             # self.value_func.gripper_actor.train()
-            value = self.value_func.predict_cost(batch, B, T, task=observation.task)
+            value = self.value_func.predict_cost(batch, B, T, grasped=observation.grasped.item(), task=observation.task)
             
             # dist = (ee_pos_batch - object_pos.reshape(B, T, -1))**2
             # dist = dist.sum(dim=-1)
