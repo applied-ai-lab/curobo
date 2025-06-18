@@ -70,8 +70,8 @@ class ValueCost(CostBase, ValueCostConfig):
 
 
         pos_error, axis_angle_error = compute_pose_error(
-            observation.left_ee_pos.repeat(B*T, 1),
-            matrix_to_quaternion(rotation_6d_to_matrix(observation.left_ee_rot)).repeat(B*T, 1),
+            observation.left_ee_pos[:1].repeat(B*T, 1),
+            matrix_to_quaternion(rotation_6d_to_matrix(observation.left_ee_rot[:1])).repeat(B*T, 1),
             # self.rotation_transformer.inverse(observation.left_ee_rot).repeat(B*T, 1),
             ee_pos_batch.reshape(-1, 3),
             ee_quat_batch.reshape(-1, 4),
@@ -86,20 +86,20 @@ class ValueCost(CostBase, ValueCostConfig):
         # left_gripper_qpos = torch.cat([left_gripper_qpos, -left_gripper_qpos], dim=-1)
 
         # left_gripper_velocity = state_batch.velocity[:, :, -1:]
+        
         left_gripper_qpos = observation.left_gripper_qpos.reshape(-1, observation.stack_states, 2)
         left_gripper_qpos = left_gripper_qpos.repeat(B*T, 1, 1).reshape(B, T, -1)
 
         
         # ee_rot_batch = self.rotation_transformer.forward(ee_quat_batch)
         ee_rot_batch = matrix_to_rotation_6d(quaternion_to_matrix(ee_quat_batch.reshape(-1, 4))).reshape(B, T, -1)
-
-        object_pos = observation.object_pos.unsqueeze(1).repeat(B, T, 1)
-        object_rot = observation.object_rot.unsqueeze(1).repeat(B, T, 1)
+        object_pos = observation.object_pos.reshape(1, -1).unsqueeze(1).repeat(B, T, 1)
+        object_rot = observation.object_rot.reshape(1, -1).unsqueeze(1).repeat(B, T, 1)
 
 
         # if observation.grasped.item():
-        object_quat = matrix_to_quaternion(rotation_6d_to_matrix(object_rot)).reshape(B, T, -1)
-        grasped_object_pos, grasped_object_quat = self.apply_delta_pose(object_pos.reshape(B*T, -1), 
+        object_quat = matrix_to_quaternion(rotation_6d_to_matrix(observation.object_rot[:1].unsqueeze(1).repeat(B, T, 1))).reshape(B, T, -1)
+        grasped_object_pos, grasped_object_quat = self.apply_delta_pose(observation.object_pos[:1].unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1), 
                                                     object_quat.reshape(B*T, -1), 
                                                     torch.cat([pos_error, axis_angle_error], dim=-1).reshape(B*T, -1))
         grasped_object_pos = grasped_object_pos.reshape(B, T, -1)
@@ -108,18 +108,29 @@ class ValueCost(CostBase, ValueCostConfig):
 
         # grasped = torch.logical_and(left_gripper_velocity < 0, observation.grasped.expand(left_gripper_velocity.shape))
 
+        if observation.stack_states > 1:
+            # If the observation is stacked, we need to repeat the grasped object position and rotation for each time step
+            # stack past states
+            grasped_object_pos = torch.cat([object_pos[:, 0].reshape(B, observation.stack_states, 3)[:, :observation.stack_states-1:],
+                                            grasped_object_pos], dim=1)
+            grasped_object_rot = torch.cat([object_rot[:, 0].reshape(B, observation.stack_states, 6)[:, :observation.stack_states-1],
+                                            grasped_object_rot], dim=1)
+            grasped_object_pos = grasped_object_pos.unfold(1, observation.stack_states, 1).reshape(B, T, -1)
+            grasped_object_rot = grasped_object_rot.unfold(1, observation.stack_states, 1).reshape(B, T, -1)
+            
+        
         object_pos = torch.where(observation.grasped.unsqueeze(1).repeat(1, T, 1).bool(), grasped_object_pos, object_pos)
         object_rot = torch.where(observation.grasped.unsqueeze(1).repeat(1, T, 1).bool(), grasped_object_rot, object_rot)
         
-        object_quat = matrix_to_quaternion(rotation_6d_to_matrix(object_rot))
+        object_quat = matrix_to_quaternion(rotation_6d_to_matrix(object_rot.reshape(B, T, observation.stack_states, -1))).reshape(-1, 4)
         
         ee_pose = Pose(
-            position=ee_pos_batch.reshape(B*T, -1),
-            quaternion=ee_quat_batch.reshape(B*T, -1)
+            position=ee_pos_batch.unsqueeze(2).repeat(1, 1, observation.stack_states, 1).reshape(B*T*observation.stack_states, -1),
+            quaternion=ee_quat_batch.unsqueeze(2).repeat(1, 1, observation.stack_states, 1).reshape(B*T*observation.stack_states, -1)
         )
         object_pose = Pose(
-            position=object_pos.reshape(B*T, -1),
-            quaternion=object_quat.reshape(B*T, -1)
+            position=object_pos.reshape(B*T*observation.stack_states, -1),
+            quaternion=object_quat.reshape(B*T*observation.stack_states, -1)
         )
         world_pose_in_gripper = ee_pose.inverse()
 
@@ -128,11 +139,23 @@ class ValueCost(CostBase, ValueCostConfig):
         object_to_left_ee_pos = object_to_left_ee_pose.position
         object_to_left_ee_quat = object_to_left_ee_pose.quaternion
         object_to_left_ee_rot = object_to_left_ee_pose.get_6d_rep()
-
+        object_to_left_ee_pos = object_to_left_ee_pos.reshape(B, T, observation.stack_states, -1)
+        object_to_left_ee_rot = object_to_left_ee_rot.reshape(B, T, observation.stack_states, -1)
+        
+        left_ee_pos = ee_pos_batch
+        left_ee_rot = ee_rot_batch
+        if observation.stack_states > 1:
+            left_ee_pos = torch.cat([observation.left_ee_pos.unsqueeze(0).repeat(B, 1, 1)[:, :observation.stack_states-1:, :],
+                                    ee_pos_batch], dim=1)
+            left_ee_rot = torch.cat([observation.left_ee_rot.unsqueeze(0).repeat(B, 1, 1)[:, :observation.stack_states-1:, :],
+                                        ee_rot_batch], dim=1)
+            left_ee_pos = left_ee_pos.unfold(1, observation.stack_states, 1).reshape(B, T, -1)
+            left_ee_rot = left_ee_rot.unfold(1, observation.stack_states, 1).reshape(B, T, -1)
+            
         states = TensorDict(
             dict(
-                left_ee_pos=ee_pos_batch.reshape(B*T, -1),
-                left_ee_rot=ee_rot_batch.reshape(B*T, -1),
+                left_ee_pos=left_ee_pos.reshape(B*T, -1),
+                left_ee_rot=left_ee_rot.reshape(B*T, -1),
                 left_gripper_qpos=left_gripper_qpos.reshape(B*T, -1),
                 # left_gripper_qpos=observation.left_gripper_qpos.unsqueeze(1).repeat(B, T, 1).reshape(B*T, -1),
                 object_pos=object_pos.reshape(B*T, -1) if observation.object_pos is not None else None,
