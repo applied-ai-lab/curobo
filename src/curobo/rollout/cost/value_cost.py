@@ -62,7 +62,7 @@ class ValueCost(CostBase, ValueCostConfig):
     def set_policy_fn(self, policy_fn):
         self.policy_func = policy_fn
 
-    def forward(self, state_batch, ee_pos_batch, ee_quat_batch, observation: Observation, goal: Goal):
+    def forward(self, state_batch, action_batch, ee_pos_batch, ee_quat_batch, observation: Observation, goal: Goal):
         B, T, _ = ee_pos_batch.shape
     
         if ee_pos_batch.shape[1] == 1:
@@ -152,6 +152,24 @@ class ValueCost(CostBase, ValueCostConfig):
             left_ee_pos = left_ee_pos.unfold(1, observation.stack_states, 1).reshape(B, T, -1)
             left_ee_rot = left_ee_rot.unfold(1, observation.stack_states, 1).reshape(B, T, -1)
             
+            
+        # concat with the current state
+        left_ee_pos = torch.cat([observation.left_ee_pos.unsqueeze(0).repeat(B, 1, 1), 
+                                 left_ee_pos.reshape(B, T, -1)[:, :T-1]], dim=1)
+        left_ee_rot = torch.cat([observation.left_ee_rot.unsqueeze(0).repeat(B, 1, 1),
+                                 left_ee_rot.reshape(B, T, -1)[:, :T-1]], dim=1)
+        left_gripper_qpos = torch.cat([observation.left_gripper_qpos.unsqueeze(0).repeat(B, 1, 1),
+                                        left_gripper_qpos.reshape(B, T, -1)[:, :T-1]], dim=1)
+        object_pos = torch.cat([observation.object_pos.unsqueeze(0).repeat(B, 1, 1),
+                                object_pos.reshape(B, T, -1)[:, :T-1]], dim=1)
+        object_rot = torch.cat([observation.object_rot.unsqueeze(0).repeat(B, 1, 1),
+                                object_rot.reshape(B, T, -1)[:, :T-1]], dim=1)
+        object_to_left_ee_pos = torch.cat([observation.object_to_left_ee_pos.unsqueeze(0).repeat(B, 1, 1),
+                                            object_to_left_ee_pos.reshape(B, T, -1)[:, :T-1]], dim=1)
+        object_to_left_ee_rot = torch.cat([observation.object_to_left_ee_rot.unsqueeze(0).repeat(B, 1, 1),
+                                            object_to_left_ee_rot.reshape(B, T, -1)[:, :T-1]], dim=1)
+        
+            
         states = TensorDict(
             dict(
                 left_ee_pos=left_ee_pos.reshape(B*T, -1),
@@ -182,7 +200,7 @@ class ValueCost(CostBase, ValueCostConfig):
             # gripper_action = self.value_func.gripper_actor(batch)
             # action, log_prob, action_prob = self.value_func.gripper_actor.get_action(batch)
             # self.value_func.gripper_actor.train()
-            value = self.value_func.predict_cost(batch, B, T, grasped=observation.grasped.item(), task=observation.task)
+            value = self.value_func.predict_cost(batch, B, T, grasped=observation.grasped.item(), task=observation.task, action=state_batch.position.reshape(B*T, -1))
             
             # dist = (ee_pos_batch - object_pos.reshape(B, T, -1))**2
             # dist = dist.sum(dim=-1)

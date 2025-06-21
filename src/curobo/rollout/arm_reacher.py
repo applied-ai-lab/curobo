@@ -256,6 +256,7 @@ class ArmReacher(ArmBase, ArmReacherConfig):
         if self.cost_cfg.value_cfg is not None and self.value_cost.enabled:
             value = self.value_cost.forward(
                 state_batch,
+                action_batch,
                 ee_pos_batch,
                 ee_quat_batch,
                 self._observation_buffer,
